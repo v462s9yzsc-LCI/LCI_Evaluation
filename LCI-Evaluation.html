@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LCI Evaluation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    --blue:#264d98;
+    --blue-dark:#152e63;
+    --blue-pale:#eaeffb;
+    --ink:#14161c;
+    --gray:#6b7079;
+    --gray-light:#f4f5f8;
+    --line:#e3e5ea;
+    --white:#ffffff;
+    --good:#2f9668;
+    --good-pale:#e6f5ee;
+    --bad:#c0392b;
+    --bad-pale:#fbeae8;
+    --warn:#b6790a;
+    --radius:14px;
+    --shadow: 0 1px 2px rgba(20,22,28,.04), 0 8px 24px -12px rgba(20,22,28,.12);
+    --maxw:640px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+    background:var(--gray-light);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    line-height:1.45;
+  }
+  #app{min-height:100vh;display:flex;flex-direction:column;}
+  .wrap{width:100%;max-width:var(--maxw);margin:0 auto;padding:20px 18px 64px;flex:1;}
+  .wrap.wide{max-width:920px;}
+
+  /* Header */
+  .topbar{
+    background:var(--white);border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:20;
+  }
+  .topbar-inner{max-width:var(--maxw);margin:0 auto;padding:14px 18px;display:flex;align-items:center;gap:10px;}
+  .topbar-inner.wide{max-width:920px;}
+  .mark{
+    width:34px;height:34px;border-radius:9px;background:var(--blue);
+    display:flex;align-items:center;justify-content:center;flex:none;position:relative;overflow:hidden;
+  }
+  .mark svg{width:19px;height:19px;}
+  .brand-text{display:flex;flex-direction:column;line-height:1.1;}
+  .brand-text b{font-size:14.5px;font-weight:700;letter-spacing:-.01em;}
+  .brand-text span{font-size:11px;color:var(--gray);letter-spacing:.02em;}
+  .topbar-spacer{flex:1;}
+  .back-link{font-size:13.5px;color:var(--blue);text-decoration:none;font-weight:600;display:flex;align-items:center;gap:4px;}
+  .back-link:hover{text-decoration:underline;}
+
+  h1{font-family:'Fraunces',serif;font-weight:600;font-size:26px;letter-spacing:-.01em;margin:0 0 6px;color:var(--ink);}
+  h2{font-size:18px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em;}
+  h3{font-size:14.5px;font-weight:700;margin:0;color:var(--ink);}
+  p{margin:0 0 12px;color:var(--gray);font-size:14.5px;}
+  .eyebrow{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--blue);margin:0 0 8px;}
+
+  .card{
+    background:var(--white);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px;margin-bottom:14px;box-shadow:var(--shadow);
+  }
+  .card.flush{padding:0;overflow:hidden;}
+  .muted-card{background:var(--gray-light);border:1px dashed var(--line);border-radius:var(--radius);padding:16px;}
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    font-family:inherit;font-size:14.5px;font-weight:600;letter-spacing:-.005em;
+    padding:13px 20px;border-radius:11px;border:1px solid transparent;cursor:pointer;
+    transition:transform .06s ease, background .15s ease, border-color .15s ease;
+    min-height:46px;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn-primary{background:var(--blue);color:#fff;}
+  .btn-primary:hover{background:var(--blue-dark);}
+  .btn-primary:disabled{background:#aab4cf;cursor:not-allowed;}
+  .btn-outline{background:#fff;color:var(--blue);border-color:var(--blue);}
+  .btn-outline:hover{background:var(--blue-pale);}
+  .btn-ghost{background:transparent;color:var(--gray);border-color:var(--line);}
+  .btn-ghost:hover{background:var(--gray-light);}
+  .btn-block{width:100%;}
+  .btn-sm{padding:9px 14px;font-size:13px;min-height:36px;border-radius:9px;}
+  .btn-row{display:flex;gap:10px;margin-top:18px;}
+  .btn-row .btn{flex:1;}
+
+  label.field-label{display:block;font-size:13.5px;font-weight:600;margin-bottom:7px;color:var(--ink);}
+  .hint{font-size:12.5px;color:var(--gray);margin-top:6px;}
+  input[type=text], input[type=search]{
+    width:100%;font-family:inherit;font-size:15.5px;padding:12px 14px;border-radius:10px;
+    border:1.5px solid var(--line);background:#fff;color:var(--ink);
+  }
+  input[type=text]:focus, input[type=search]:focus, textarea:focus{
+    outline:none;border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-pale);
+  }
+  input.err{border-color:var(--bad);}
+  textarea{
+    width:100%;font-family:inherit;font-size:14.5px;padding:12px 14px;border-radius:10px;
+    border:1.5px solid var(--line);resize:vertical;min-height:70px;background:#fff;color:var(--ink);
+  }
+  .field{margin-bottom:16px;}
+  .err-text{color:var(--bad);font-size:12.5px;font-weight:600;margin-top:6px;display:none;}
+  .err-text.show{display:block;}
+
+  /* choice pills */
+  .pill-group{display:flex;flex-wrap:wrap;gap:8px;}
+  .pill{
+    padding:10px 15px;border-radius:999px;border:1.5px solid var(--line);background:#fff;
+    font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer;user-select:none;transition:.12s;
+  }
+  .pill:hover{border-color:var(--blue);}
+  .pill.active{background:var(--blue);border-color:var(--blue);color:#fff;}
+
+  /* yes/no */
+  .yn-group{display:flex;gap:8px;}
+  .yn-group .pill{flex:1;text-align:center;}
+
+  /* scale */
+  .scale-item{padding:16px 0;border-bottom:1px solid var(--line);}
+  .scale-item:last-child{border-bottom:none;}
+  .scale-item .q{font-size:14px;font-weight:600;margin-bottom:10px;color:var(--ink);}
+  .scale-row{display:flex;gap:6px;}
+  .scale-btn{
+    flex:1;aspect-ratio:1/1;max-height:46px;border-radius:10px;border:1.5px solid var(--line);
+    background:#fff;font-weight:700;font-size:14px;color:var(--gray);cursor:pointer;transition:.12s;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .scale-btn:hover{border-color:var(--blue);}
+  .scale-btn.active{background:var(--blue);border-color:var(--blue);color:#fff;}
+  .scale-ends{display:flex;justify-content:space-between;font-size:11px;color:var(--gray);margin-top:6px;}
+
+  /* progress */
+  .progress-wrap{display:flex;align-items:center;gap:8px;margin-bottom:20px;}
+  .progress-track{flex:1;height:5px;background:var(--line);border-radius:99px;overflow:hidden;}
+  .progress-fill{height:100%;background:var(--blue);border-radius:99px;transition:width .25s ease;}
+  .progress-label{font-size:11.5px;color:var(--gray);font-weight:700;white-space:nowrap;}
+
+  .section-title{margin-bottom:2px;}
+  .section-sub{font-size:12.5px;color:var(--gray);margin-bottom:16px;}
+
+  /* home / choice tiles */
+  .tile{
+    display:flex;align-items:center;gap:14px;padding:18px;border-radius:var(--radius);
+    border:1.5px solid var(--line);background:#fff;cursor:pointer;margin-bottom:12px;transition:.12s;
+  }
+  .tile:hover{border-color:var(--blue);box-shadow:var(--shadow);}
+  .tile-icon{
+    width:42px;height:42px;border-radius:11px;background:var(--blue-pale);color:var(--blue);
+    display:flex;align-items:center;justify-content:center;flex:none;
+  }
+  .tile-icon svg{width:21px;height:21px;}
+  .tile-text b{display:block;font-size:15px;margin-bottom:2px;}
+  .tile-text span{font-size:12.5px;color:var(--gray);}
+  .tile-arrow{margin-left:auto;color:var(--gray);flex:none;}
+
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;background:var(--blue-pale);color:var(--blue);}
+  .badge.gray{background:var(--gray-light);color:var(--gray);}
+  .privacy-note{display:flex;gap:10px;padding:14px 16px;border-radius:12px;background:var(--good-pale);margin-bottom:18px;}
+  .privacy-note svg{flex:none;color:var(--good);width:18px;height:18px;margin-top:1px;}
+  .privacy-note p{margin:0;color:#1f4f38;font-size:13px;}
+
+  /* thank you */
+  .center-state{text-align:center;padding:40px 10px;}
+  .center-state .icon-circle{
+    width:60px;height:60px;border-radius:50%;background:var(--good-pale);color:var(--good);
+    display:flex;align-items:center;justify-content:center;margin:0 auto 18px;
+  }
+  .center-state .icon-circle svg{width:28px;height:28px;}
+
+  /* admin */
+  .row-between{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .round-item{
+    display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:var(--radius);
+    border:1px solid var(--line);background:#fff;margin-bottom:10px;cursor:pointer;transition:.12s;
+  }
+  .round-item:hover{border-color:var(--blue);box-shadow:var(--shadow);}
+  .round-item .ri-main{flex:1;min-width:0;}
+  .round-item b{font-size:14.5px;display:block;}
+  .round-item .ri-sub{font-size:12.5px;color:var(--gray);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .round-item .ri-counts{display:flex;gap:6px;flex:none;}
+  .count-chip{font-size:11px;font-weight:700;background:var(--gray-light);color:var(--ink);padding:4px 8px;border-radius:7px;}
+
+  .link-box{
+    display:flex;gap:8px;align-items:center;background:var(--gray-light);border:1px solid var(--line);
+    border-radius:10px;padding:10px 12px;margin-top:10px;
+  }
+  .link-box code{flex:1;font-size:12px;color:var(--blue-dark);overflow-x:auto;white-space:nowrap;font-family:'SF Mono',Consolas,monospace;}
+
+  .tabs{display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding-bottom:2px;}
+  .tab{
+    padding:9px 14px;border-radius:9px;font-size:13px;font-weight:700;color:var(--gray);
+    background:var(--gray-light);cursor:pointer;white-space:nowrap;border:1.5px solid transparent;
+  }
+  .tab.active{background:var(--blue-pale);color:var(--blue);border-color:var(--blue);}
+
+  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}
+  .stat-box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 12px;text-align:center;}
+  .stat-box .num{font-family:'Fraunces',serif;font-size:24px;font-weight:600;color:var(--blue);}
+  .stat-box .lbl{font-size:11px;color:var(--gray);font-weight:600;margin-top:2px;}
+
+  .dist-item{margin-bottom:12px;}
+  .dist-item .dl{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px;}
+  .dist-item .dl b{font-weight:700;}
+  .dist-item .dl span{color:var(--gray);}
+  .dist-bar-track{height:9px;background:var(--gray-light);border-radius:99px;overflow:hidden;}
+  .dist-bar-fill{height:100%;background:var(--blue);border-radius:99px;}
+
+  .chart-box{position:relative;margin:6px 0 22px;}
+  .comment-list{display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto;}
+  .comment{background:var(--gray-light);border-radius:10px;padding:11px 13px;font-size:13.5px;color:var(--ink);}
+  .comment time{display:block;font-size:11px;color:var(--gray);margin-top:5px;font-weight:600;}
+  .empty-note{font-size:13px;color:var(--gray);font-style:italic;padding:8px 0;}
+
+  .toast{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);
+    background:var(--ink);color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;font-weight:600;
+    opacity:0;pointer-events:none;transition:.2s;z-index:100;box-shadow:var(--shadow);
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  .loading{display:flex;align-items:center;justify-content:center;padding:60px 0;color:var(--gray);font-size:14px;gap:10px;}
+  .spinner{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--blue);animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .divider{height:1px;background:var(--line);margin:18px 0;}
+  .section-header{display:flex;align-items:center;gap:8px;margin-bottom:2px;}
+  .num-badge{width:22px;height:22px;border-radius:6px;background:var(--blue-pale);color:var(--blue);font-size:11.5px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none;}
+
+  @media (max-width:420px){
+    .wrap{padding:16px 14px 56px;}
+    h1{font-size:22px;}
+    .stat-grid{grid-template-columns:repeat(3,1fr);gap:7px;}
+    .stat-box{padding:10px 6px;}
+    .stat-box .num{font-size:19px;}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================= DATA / SCHEMA ============================= */
+
+const COURSE_SECTIONS = [
+  { id:'basis', title:'Dauer und Motivation', items:[
+    { id:'dauer', label:'Wie empfanden Sie die Dauer Ihres Kurses?', type:'choice', options:[['zu_kurz','zu kurz'],['genau_richtig','genau richtig'],['zu_lang','zu lang']] },
+    { id:'grund', label:'Aus welchen Gründen haben Sie sich für den Kurs entschieden?', type:'choice_other', options:[['privat','private Pläne'],['beruflich','berufliche Pläne'],['andere','andere Gründe']] },
+    { id:'aufmerksam', label:'Wie sind Sie auf uns aufmerksam geworden?', type:'choice_other', options:[['beratungsstellen','Beratungsstellen'],['freunde','Freunde/Bekannte'],['werbung','Anzeige/Werbung'],['internet','Internet'],['sonstiges','Sonstiges']] }
+  ]},
+  { id:'info', title:'Informationen und Unterstützung', items:[
+    { id:'info_erhalten', label:'Haben Sie Informationen über den Kursaufbau erhalten?', type:'yesno' },
+    { id:'info_wie', label:'Wie haben Sie die Informationen erhalten?', type:'choice', options:[['gespraech','im Gespräch bei der Anmeldung'],['lehrerinnen','durch die Lehrer:innen'],['teilnehmer','durch andere Teilnehmer']] }
+  ]},
+  { id:'unterstuetzung', title:'Unterstützung während des Kurses', scaleType:'scale4', items:[
+    { id:'fragen_kurs', label:'Bei Fragen zum Kurs' },
+    { id:'probleme_lehrer_tn', label:'Bei Problemen mit Lehrern und Teilnehmern' },
+    { id:'private_probleme', label:'Bei privaten Problemen (z. B. Schreiben von Behörden/Ämtern)' }
+  ]},
+  { id:'kurs', title:'Fragen zum Kurs', scaleType:'scale4', items:[
+    { id:'struktur', label:'War der Kurs klar strukturiert?' },
+    { id:'interessant', label:'Die Lehrer gestalteten den Unterricht interessant.' },
+    { id:'freundlich', label:'Die Lehrer waren freundlich und respektierten alle Teilnehmer.' },
+    { id:'verstaendlich', label:'Die Lektionen waren gut zu verstehen.' },
+    { id:'auf_fragen_ein', label:'Die Lehrer gingen immer auf Fragen der Teilnehmer ein.' },
+    { id:'lernatmosphaere', label:'Es war eine gute Lernatmosphäre im Kurs.' },
+    { id:'lehrmaterial', label:'Das eingesetzte Lehrmaterial hat mir gefallen.' },
+    { id:'material_ergaenzt', label:'Die Lehrer ergänzten das Material durch Arbeitsblätter, Texte, Spiele usw.' },
+    { id:'unterrichtsraum', label:'Wie zufrieden waren Sie mit Ihrem Unterrichtsraum?' }
+  ]},
+  { id:'erfahrung', title:'Ihre persönlichen Erfahrungen', scaleType:'scale4', items:[
+    { id:'ergebnisse', label:'Wie beurteilen Sie Ihre erzielten Ergebnisse?' },
+    { id:'berufliche_hilfe', label:'Hilft Ihnen der Kurs bei Ihrem beruflichen Weiterkommen?' }
+  ]},
+  { id:'probleme', title:'Probleme', items:[
+    { id:'probleme_aufgetreten', label:'Traten während des Kurses Probleme auf?', type:'yesno_text', textLabel:'Wenn ja, welche?' }
+  ]},
+  { id:'freitext', title:'Ihre Rückmeldung', items:[
+    { id:'gefallen_text', label:'Was gefiel Ihnen besonders am Kurs?', type:'text' },
+    { id:'verbesserung_text', label:'Was kann verbessert werden?', type:'text' },
+    { id:'ideen_text', label:'Welche Ideen haben Sie für neue Kurse?', type:'text' }
+  ]}
+];
+
+const TEACHER_SECTIONS = [
+  { id:'person', title:'Persönliche Wirkung', scaleType:'scale5', items:[
+    { id:'humor', label:'Hat Humor, versteht auch Spaß' },
+    { id:'zuverlaessig', label:'Zuverlässig' },
+    { id:'verstaendnisvoll', label:'Verständnisvoll' },
+    { id:'fragen_trauen', label:'Man traut sich, Fragen zu stellen' }
+  ]},
+  { id:'unterricht', title:'Gestaltung des Unterrichts', scaleType:'scale5', items:[
+    { id:'abwechslungsreich', label:'Abwechslungsreich' },
+    { id:'akustisch', label:'Akustisch verständlich' },
+    { id:'inhaltlich', label:'Inhaltlich verständlich' },
+    { id:'darstellung', label:'Gute Darstellung' },
+    { id:'praxisnaehe', label:'Praxisnähe' }
+  ]},
+  { id:'tafel', title:'Tafelanschrieb, Folien', scaleType:'scale5', items:[
+    { id:'lesbar', label:'Gut lesbar' },
+    { id:'mitschreiben_tempo', label:'Zum Mitschreiben langsam genug' }
+  ]},
+  { id:'atmosphaere', title:'Arbeitsatmosphäre', scaleType:'scale5', items:[
+    { id:'angenehm', label:'Angenehm' },
+    { id:'foerderlich', label:'Förderlich' }
+  ]},
+  { id:'fachwissen', title:'Fachwissen', scaleType:'scale5', items:[
+    { id:'fachwissen', label:'Umfassend, theoretisch und praktisch' }
+  ]},
+  { id:'gesamt', title:'Gesamtzufriedenheit', scaleType:'scale5', items:[
+    { id:'gesamtzufriedenheit', label:'Gesamtzufriedenheit' }
+  ]},
+  { id:'freitext', title:'Ihre Rückmeldung', items:[
+    { id:'positiv_text', label:'Mir hat besonders gefallen, dass ...', type:'text' },
+    { id:'negativ_text', label:'Mir hat überhaupt nicht gefallen, dass ...', type:'text' }
+  ]}
+];
+
+const SCALE4_LABELS = { left:'hervorragend', right:'gering / nicht vorhanden', n:4 };
+const SCALE5_LABELS = { left:'positiv', right:'negativ', n:5 };
+
+/* ============================= STATE ============================= */
+
+const S = {
+  view: 'loading',        // loading | admin_list | admin_create | admin_detail | p_home | p_course | p_teacher_pick | p_teacher | p_done | not_found
+  rounds: [],
+  currentRoundId: null,
+  currentRound: null,
+  detailTab: 'course',    // course | t0 | t1
+  responses: { course: [], t0: [], t1: [] },
+  wizard: null,           // { kind:'course'|'teacher', dozentName, step, answers, errors }
+  submittedThisSession: false
+};
+
+/* ============================= STORAGE HELPERS (Google Sheets backend) =============================
+   Diese App speichert NICHT im Claude-Speicher (der verlangt ein Claude-Konto), sondern in einem
+   eigenen Google Sheet über ein kostenloses Google Apps Script Web App. Teilnehmer benötigen dafür
+   kein Konto. Bitte die Web-App-URL nach dem Deployment hier eintragen: */
+const API_URL = 'https://script.google.com/macros/s/AKfycbwm5jzXrYoArVAmvskFj1dMmU9c67NINuZygbEhd5v_aPzFr7XnU4uMtNkxawhjQQ/exec';
+
+function apiConfigured(){ return API_URL && API_URL.indexOf('https://script.google.com') === 0; }
+
+async function apiGetSheet(sheet){
+  if (!apiConfigured()) return [];
+  try{
+    const res = await fetch(API_URL + '?sheet=' + encodeURIComponent(sheet) + '&t=' + Date.now());
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  }catch(e){ console.error('apiGetSheet failed', sheet, e); return []; }
+}
+async function apiAppend(sheet, record){
+  if (!apiConfigured()) return null;
+  try{
+    const res = await fetch(API_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'text/plain;charset=utf-8' }, // avoids CORS preflight against Apps Script
+      body: JSON.stringify({ sheet, record })
+    });
+    return await res.json();
+  }catch(e){ console.error('apiAppend failed', sheet, e); return null; }
+}
+
+function uid(){
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c=>{
+    const r = Math.random()*16|0, v = c==='x'?r:(r&0x3|0x8); return v.toString(16);
+  });
+}
+function shortId(id){ return id.split('-')[0]; }
+function fmtDate(ts){
+  const d = new Date(ts);
+  return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}) + ', ' +
+         d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) + ' Uhr';
+}
+function norm(s){ return (s||'').trim().toLowerCase().replace(/\s+/g,' '); }
+function esc(s){
+  return (s==null?'':String(s))
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ============================= ROUND DATA ============================= */
+/* Sheets used in the Google Spreadsheet: "rounds", "course_responses", "teacher_responses" */
+
+async function createRound(data){
+  const id = uid();
+  const round = {
+    id,
+    kursnummer: data.kursnummer.trim(),
+    kursname: data.kursname.trim(),
+    dozent1: data.dozent1.trim(),
+    dozent2: data.dozent2.trim(),
+    createdAt: Date.now()
+  };
+  await apiAppend('rounds', round);
+  return normalizeRound(round);
+}
+
+function normalizeRound(row){
+  return {
+    id: row.id,
+    kursnummer: row.kursnummer || '',
+    kursname: row.kursname || '',
+    dozenten: [row.dozent1, row.dozent2].filter(Boolean),
+    createdAt: Number(row.createdAt) || 0
+  };
+}
+
+async function loadRounds(){
+  const rows = await apiGetSheet('rounds');
+  const rounds = rows.filter(r=>r.id).map(normalizeRound);
+  rounds.sort((a,b)=> b.createdAt - a.createdAt);
+  return rounds;
+}
+
+async function loadRound(id){
+  const rounds = await loadRounds();
+  return rounds.find(r=>r.id===id) || null;
+}
+
+async function saveResponse(roundId, type, dozentName, answers){
+  const sheet = type === 'course' ? 'course_responses' : 'teacher_responses';
+  const record = Object.assign({
+    id: uid(),
+    roundId,
+    kursnummer: (answers.__kursnummer||'').trim(),
+    timestamp: Date.now()
+  }, type !== 'course' ? { dozentName: dozentName||'', dozentSlug: slug(dozentName||'') } : {});
+  Object.keys(answers).forEach(k=>{ if (k !== '__kursnummer') record[k] = answers[k]; });
+  await apiAppend(sheet, record);
+  return record;
+}
+
+function rowToResponse(row){
+  const answers = {};
+  Object.keys(row).forEach(k=>{
+    if (!['id','roundId','kursnummer','timestamp','dozentName','dozentSlug'].includes(k)) answers[k] = row[k];
+  });
+  return {
+    roundId: row.roundId,
+    dozentName: row.dozentName || null,
+    kursnummer: row.kursnummer || '',
+    timestamp: Number(row.timestamp) || 0,
+    answers
+  };
+}
+
+async function loadResponses(roundId, type, dozentSlugFilter){
+  const sheet = type === 'course' ? 'course_responses' : 'teacher_responses';
+  const rows = await apiGetSheet(sheet);
+  let items = rows.filter(r=> r.roundId === roundId);
+  if (dozentSlugFilter) items = items.filter(r=> r.dozentSlug === dozentSlugFilter);
+  items = items.map(rowToResponse);
+  items.sort((a,b)=> a.timestamp - b.timestamp);
+  return items;
+}
+
+async function loadAllResponsesForRound(round){
+  const course = await loadResponses(round.id, 'course');
+  const t0 = round.dozenten[0] ? await loadResponses(round.id, 'teacher', slug(round.dozenten[0])) : [];
+  const t1 = round.dozenten[1] ? await loadResponses(round.id, 'teacher', slug(round.dozenten[1])) : [];
+  return { course, t0, t1 };
+}
+function slug(name){ return norm(name).replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
+
+/* ============================= URL / LINK ============================= */
+
+function buildRoundLink(roundId){
+  const url = new URL(window.location.href);
+  url.search = '?round=' + roundId;
+  url.hash = '';
+  return url.toString();
+}
+function copyText(text){
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>toast('Link kopiert.')).catch(()=>fallbackCopy(text));
+  } else fallbackCopy(text);
+}
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); toast('Link kopiert.'); }catch(e){ toast('Kopieren nicht möglich.'); }
+  document.body.removeChild(ta);
+}
+
+/* ============================= ICONS ============================= */
+
+const ICONS = {
+  flag: `<svg viewBox="0 0 24 24" fill="none"><path d="M5 21V4l13 5.2-6.5 2.4L18 14 5 21z" fill="currentColor"/></svg>`,
+  arrow: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`,
+  shield: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/></svg>`,
+  book: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
+  user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>`,
+  plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
+  link: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.4l2-2a5 5 0 0 0-7-7l-1.2 1.1"/><path d="M14 11a5 5 0 0 0-7.5-.4l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></svg>`,
+  download: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13m0 0l-4-4m4 4l4-4"/><path d="M4 19h16"/></svg>`,
+  eye: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>`
+};
+
+/* ============================= RENDER: SHELL ============================= */
+
+function topbar(opts){
+  opts = opts || {};
+  return `
+  <div class="topbar">
+    <div class="topbar-inner ${opts.wide?'wide':''}">
+      <div class="mark">${ICONS.flag}</div>
+      <div class="brand-text"><b>language coach institute</b><span>Evaluation</span></div>
+      <div class="topbar-spacer"></div>
+      ${opts.back ? `<a class="back-link" href="javascript:void(0)" onclick="${opts.back}">${ICONS.arrow.replace('stroke-linecap','transform="rotate(180 12 12)" stroke-linecap')}<span>${opts.backLabel||'Zurück'}</span></a>` : ''}
+    </div>
+  </div>`;
+}
+
+async function render(){
+  const app = document.getElementById('app');
+  let html = '';
+
+  if (S.view === 'setup_needed'){
+    html = topbar() + `<div class="wrap"><div class="card">
+      <div class="eyebrow">Einrichtung nötig</div>
+      <h2>Google-Sheet-Anbindung fehlt noch</h2>
+      <p>Diese App speichert Antworten in einem eigenen Google Sheet, damit Teilnehmer:innen kein Claude-Konto benötigen. Bitte tragen Sie im Code (Konstante <code>API_URL</code>, ganz oben im &lt;script&gt;-Bereich) die URL Ihres bereitgestellten Google Apps Script Web Apps ein — siehe Anleitung.</p>
+    </div></div>`;
+  } else if (S.view === 'loading'){
+    html = topbar() + `<div class="wrap"><div class="loading"><div class="spinner"></div>Wird geladen …</div></div>`;
+  } else if (S.view === 'not_found'){
+    html = topbar() + `<div class="wrap"><div class="card center-state">
+      <div class="icon-circle" style="background:var(--bad-pale);color:var(--bad)">!</div>
+      <h2>Umfrage nicht gefunden</h2>
+      <p>Der Link ist ungültig oder die Umfrage wurde entfernt. Bitte wenden Sie sich an Ihre Sprachschule.</p>
+    </div></div>`;
+  } else if (S.view === 'admin_list'){
+    html = renderAdminList();
+  } else if (S.view === 'admin_create'){
+    html = renderAdminCreate();
+  } else if (S.view === 'admin_detail'){
+    html = renderAdminDetail();
+  } else if (S.view === 'p_home'){
+    html = renderParticipantHome();
+  } else if (S.view === 'p_course' || S.view === 'p_teacher'){
+    html = renderWizard();
+  } else if (S.view === 'p_teacher_pick'){
+    html = renderTeacherPick();
+  } else if (S.view === 'p_done'){
+    html = renderDone();
+  }
+
+  app.innerHTML = html;
+  window.scrollTo(0,0);
+
+  // post-render hooks
+  if (S.view === 'admin_detail') renderAdminCharts();
+}
+
+/* ============================= ADMIN: LIST ============================= */
+
+function renderAdminList(){
+  const rows = S.rounds.map(r=>{
+    return `<div class="round-item" onclick="openRoundDetail('${r.id}')">
+      <div class="ri-main">
+        <b>${esc(r.kursnummer)}${r.kursname? ' · '+esc(r.kursname):''}</b>
+        <div class="ri-sub">${r.dozenten.map(esc).join(' & ') || 'keine Dozenten hinterlegt'} · erstellt ${fmtDate(r.createdAt)}</div>
+      </div>
+      <div class="ri-counts">
+        <span class="count-chip">ID ${shortId(r.id)}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  return topbar() + `<div class="wrap">
+    <div class="eyebrow">Admin</div>
+    <h1>Evaluationen</h1>
+    <p>Erstellen Sie für jeden Kurs eine eigene Evaluationsrunde und versenden Sie den passenden Link an Ihre Teilnehmer.</p>
+
+    <button class="btn btn-primary btn-block" onclick="goCreate()">${ICONS.plus} Neue Evaluation anlegen</button>
+
+    <div class="divider"></div>
+
+    ${S.rounds.length === 0 ? `<div class="muted-card"><p style="margin:0">Noch keine Evaluationen angelegt. Legen Sie oben Ihre erste Kursevaluation an.</p></div>` : rows}
+  </div>`;
+}
+
+function renderAdminCreate(){
+  return topbar({back:'goAdminList()', backLabel:'Übersicht'}) + `<div class="wrap">
+    <div class="eyebrow">Neue Evaluation</div>
+    <h1>Kurs anlegen</h1>
+    <p>Diese Angaben dienen nur der eindeutigen Zuordnung der Antworten. Es werden keine Teilnehmerdaten erhoben.</p>
+
+    <div class="card">
+      <div class="field">
+        <label class="field-label">Kursnummer *</label>
+        <input type="text" id="f_kursnummer" placeholder="z. B. IK-2026-014">
+        <div class="err-text" id="err_kursnummer">Bitte geben Sie eine Kursnummer ein.</div>
+      </div>
+      <div class="field">
+        <label class="field-label">Kursname (optional)</label>
+        <input type="text" id="f_kursname" placeholder="z. B. Integrationskurs Modul 4">
+      </div>
+      <div class="field">
+        <label class="field-label">Dozent:in 1 *</label>
+        <input type="text" id="f_dozent1" placeholder="Vor- und Nachname">
+        <div class="err-text" id="err_dozent1">Bitte geben Sie mindestens eine:n Dozent:in ein.</div>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label class="field-label">Dozent:in 2 (optional)</label>
+        <input type="text" id="f_dozent2" placeholder="Vor- und Nachname">
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-block" onclick="submitCreateRound()">Evaluation anlegen &amp; Link erzeugen</button>
+  </div>`;
+}
+
+async function submitCreateRound(){
+  const kursnummer = document.getElementById('f_kursnummer').value;
+  const kursname = document.getElementById('f_kursname').value;
+  const dozent1 = document.getElementById('f_dozent1').value;
+  const dozent2 = document.getElementById('f_dozent2').value;
+
+  let ok = true;
+  document.getElementById('err_kursnummer').classList.toggle('show', !kursnummer.trim());
+  document.getElementById('f_kursnummer').classList.toggle('err', !kursnummer.trim());
+  if (!kursnummer.trim()) ok = false;
+  document.getElementById('err_dozent1').classList.toggle('show', !dozent1.trim());
+  document.getElementById('f_dozent1').classList.toggle('err', !dozent1.trim());
+  if (!dozent1.trim()) ok = false;
+  if (!ok) return;
+
+  const round = await createRound({kursnummer, kursname, dozent1, dozent2});
+  S.rounds.unshift(round);
+  await openRoundDetail(round.id, true);
+}
+
+/* ============================= ADMIN: DETAIL ============================= */
+
+async function openRoundDetail(id, justCreated){
+  S.view = 'loading'; render();
+  const round = await loadRound(id);
+  if (!round){ toast('Evaluation nicht gefunden.'); S.view='admin_list'; render(); return; }
+  S.currentRound = round;
+  S.responses = await loadAllResponsesForRound(round);
+  S.detailTab = 'course';
+  S.view = 'admin_detail';
+  S._justCreated = !!justCreated;
+  render();
+}
+
+function renderAdminDetail(){
+  const r = S.currentRound;
+  const link = buildRoundLink(r.id);
+  const tabs = [
+    {id:'course', label:'Kursevaluation', n:S.responses.course.length}
+  ];
+  if (r.dozenten[0]) tabs.push({id:'t0', label:r.dozenten[0], n:S.responses.t0.length});
+  if (r.dozenten[1]) tabs.push({id:'t1', label:r.dozenten[1], n:S.responses.t1.length});
+
+  return topbar({wide:true, back:'goAdminList()', backLabel:'Übersicht'}) + `<div class="wrap wide">
+    <div class="eyebrow">Auswertung</div>
+    <h1 style="margin-bottom:2px">${esc(r.kursnummer)}</h1>
+    <p>${r.kursname ? esc(r.kursname)+' · ' : ''}${r.dozenten.map(esc).join(' & ') || 'keine Dozenten hinterlegt'}</p>
+
+    ${S._justCreated ? `<div class="card" style="border-color:var(--blue)">
+      <div class="row-between" style="margin-bottom:8px">
+        <h3>${ICONS.link} Link für Teilnehmer</h3>
+        <span class="badge">neu erstellt</span>
+      </div>
+      <p style="margin-bottom:0">Senden Sie diesen Link an alle Teilnehmer:innen dieses Kurses. Der Link ist ausschließlich für diese Evaluationsrunde gültig und vermischt sich nicht mit anderen Kursen — auch nicht mit einer späteren Runde derselben Kursnummer.</p>
+      <div class="link-box">
+        <code id="linkcode">${esc(link)}</code>
+        <button class="btn btn-sm btn-outline" onclick="copyText('${esc(link)}')">Kopieren</button>
+      </div>
+    </div>` : `
+    <div class="link-box" style="margin-bottom:14px">
+      <code>${esc(link)}</code>
+      <button class="btn btn-sm btn-outline" onclick="copyText('${esc(link)}')">Kopieren</button>
+    </div>`}
+
+    <div class="btn-row" style="margin-top:0;margin-bottom:18px">
+      <button class="btn btn-ghost btn-sm" onclick="previewParticipant('${r.id}')">${ICONS.eye} Als Teilnehmer ansehen</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportJSON()">${ICONS.download} Alle Daten (JSON)</button>
+    </div>
+
+    <div class="tabs">
+      ${tabs.map(t=>`<div class="tab ${S.detailTab===t.id?'active':''}" onclick="setDetailTab('${t.id}')">${esc(t.label)} <span style="opacity:.65">(${t.n})</span></div>`).join('')}
+    </div>
+
+    <div id="detail-content">${renderDetailContent()}</div>
+  </div>`;
+}
+
+function setDetailTab(id){ S.detailTab = id; render(); }
+
+function currentTabInfo(){
+  const r = S.currentRound;
+  if (S.detailTab === 'course') return { type:'course', sections:COURSE_SECTIONS, data:S.responses.course, label:'Kursevaluation' };
+  if (S.detailTab === 't0') return { type:'teacher', sections:TEACHER_SECTIONS, data:S.responses.t0, label:r.dozenten[0] };
+  return { type:'teacher', sections:TEACHER_SECTIONS, data:S.responses.t1, label:r.dozenten[1] };
+}
+
+function renderDetailContent(){
+  const info = currentTabInfo();
+  const n = info.data.length;
+  const last = n ? info.data[info.data.length-1].timestamp : null;
+
+  let out = `<div class="stat-grid">
+    <div class="stat-box"><div class="num">${n}</div><div class="lbl">Antworten</div></div>
+    <div class="stat-box"><div class="num">${info.sections.reduce((a,s)=>a+s.items.length,0)}</div><div class="lbl">Fragen</div></div>
+    <div class="stat-box"><div class="num" style="font-size:14px;padding-top:5px">${last? fmtDate(last).split(',')[0] : '–'}</div><div class="lbl">Letzte Antwort</div></div>
+  </div>`;
+
+  if (n === 0){
+    out += `<div class="muted-card"><p style="margin:0">Für „${esc(info.label)}“ liegen noch keine Antworten vor. Sobald Teilnehmer:innen über den Link abstimmen, erscheint hier automatisch die Auswertung.</p></div>`;
+    return out + exportButtons();
+  }
+
+  info.sections.forEach((sec, si)=>{
+    out += `<div class="card">
+      <div class="section-header"><div class="num-badge">${si+1}</div><h3>${esc(sec.title)}</h3></div>
+      <div class="section-sub">&nbsp;</div>`;
+
+    if (sec.scaleType){
+      out += `<div class="chart-box"><canvas id="chart-${sec.id}" height="60"></canvas></div>`;
+    } else {
+      sec.items.forEach(item=>{
+        const itype = item.type || 'choice';
+        if (itype === 'choice' || itype === 'choice_other'){
+          out += renderChoiceDist(item, info.data);
+        } else if (itype === 'yesno'){
+          out += renderYesNoDist(item, info.data);
+        } else if (itype === 'yesno_text'){
+          out += renderYesNoDist(item, info.data);
+          out += renderTextList(item.id, info.data, item.textLabel || 'Anmerkung');
+        } else if (itype === 'text'){
+          out += renderTextList(item.id, info.data, item.label);
+        }
+      });
+    }
+    out += `</div>`;
+  });
+
+  return out + exportButtons();
+}
+
+function exportButtons(){
+  return `<div class="btn-row">
+    <button class="btn btn-outline btn-sm" onclick="exportCSV()">${ICONS.download} Diese Ansicht als CSV</button>
+  </div>`;
+}
+
+function renderChoiceDist(item, data){
+  const opts = item.options;
+  const counts = {}; opts.forEach(o=>counts[o[0]]=0);
+  let otherTexts = [];
+  let total = 0;
+  data.forEach(r=>{
+    const v = r.answers[item.id];
+    if (v == null || v==='') return;
+    total++;
+    if (counts.hasOwnProperty(v)) counts[v]++;
+    if (v === 'andere' || v === 'sonstiges'){
+      const t = r.answers[item.id+'_text'];
+      if (t) otherTexts.push({text:t, timestamp:r.timestamp});
+    }
+  });
+  let rows = opts.map(([val,lbl])=>{
+    const c = counts[val]||0;
+    const pct = total ? Math.round(c/total*100) : 0;
+    return `<div class="dist-item">
+      <div class="dl"><b>${esc(lbl)}</b><span>${c} · ${pct}%</span></div>
+      <div class="dist-bar-track"><div class="dist-bar-fill" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+
+  let block = `<div style="margin:14px 0 18px"><div class="q" style="font-size:14px;font-weight:600;margin-bottom:10px">${esc(item.label)}</div>${rows}`;
+  if (otherTexts.length){
+    block += `<div style="margin-top:10px" class="comment-list">${otherTexts.map(t=>`<div class="comment">${esc(t.text)}<time>${fmtDate(t.timestamp)}</time></div>`).join('')}</div>`;
+  }
+  block += `</div>`;
+  return block;
+}
+
+function renderYesNoDist(item, data){
+  let ja=0, nein=0, total=0;
+  data.forEach(r=>{
+    const v = r.answers[item.id];
+    if (v==='ja'){ja++;total++;} else if (v==='nein'){nein++;total++;}
+  });
+  const jaPct = total? Math.round(ja/total*100):0;
+  const neinPct = total? Math.round(nein/total*100):0;
+  return `<div style="margin:14px 0 18px">
+    <div class="q" style="font-size:14px;font-weight:600;margin-bottom:10px">${esc(item.label)}</div>
+    <div class="dist-item"><div class="dl"><b>Ja</b><span>${ja} · ${jaPct}%</span></div><div class="dist-bar-track"><div class="dist-bar-fill" style="width:${jaPct}%;background:var(--good)"></div></div></div>
+    <div class="dist-item"><div class="dl"><b>Nein</b><span>${nein} · ${neinPct}%</span></div><div class="dist-bar-track"><div class="dist-bar-fill" style="width:${neinPct}%;background:var(--bad)"></div></div></div>
+  </div>`;
+}
+
+function renderTextList(itemId, data, label){
+  const texts = data.map(r=>({text:r.answers[itemId], timestamp:r.timestamp})).filter(t=>t.text && t.text.trim());
+  return `<div style="margin:14px 0 18px">
+    <div class="q" style="font-size:14px;font-weight:600;margin-bottom:10px">${esc(label)}</div>
+    ${texts.length ? `<div class="comment-list">${texts.map(t=>`<div class="comment">${esc(t.text)}<time>${fmtDate(t.timestamp)}</time></div>`).join('')}</div>` : `<div class="empty-note">Keine Angaben.</div>`}
+  </div>`;
+}
+
+let _chartInstances = [];
+function renderAdminCharts(){
+  _chartInstances.forEach(c=>{ try{c.destroy();}catch(e){} });
+  _chartInstances = [];
+  const info = currentTabInfo();
+  if (!info.data.length) return;
+  const scaleN = info.sections.some(s=>s.scaleType==='scale5') ? 5 : 4;
+  const leftLbl = scaleN===5 ? SCALE5_LABELS.left : SCALE4_LABELS.left;
+  const rightLbl = scaleN===5 ? SCALE5_LABELS.right : SCALE4_LABELS.right;
+
+  info.sections.forEach(sec=>{
+    if (!sec.scaleType) return;
+    const labels = [];
+    const values = [];
+    sec.items.forEach(item=>{
+      const vals = info.data.map(r=>r.answers[item.id]).filter(v=>typeof v==='number');
+      if (!vals.length) return;
+      const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
+      labels.push(item.label.length>46 ? item.label.slice(0,44)+'…' : item.label);
+      values.push(+avg.toFixed(2));
+    });
+    const canvas = document.getElementById(`chart-${sec.id}`);
+    if (!canvas) return;
+    canvas.height = Math.max(60, labels.length*34);
+    const ctx = canvas.getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets:[{ data: values, backgroundColor:'#264d98', borderRadius:5, barThickness:16 }]},
+      options: {
+        indexAxis:'y',
+        responsive:true,
+        maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{callbacks:{label:(c)=> 'Ø '+c.raw+' von '+scaleN}} },
+        scales:{
+          x:{ min:1, max:scaleN, ticks:{stepSize:1, font:{size:10}}, grid:{color:'#e3e5ea'},
+              title:{display:true, text:`${leftLbl}  ←  Ø  →  ${rightLbl}`, font:{size:10, weight:'600'}, color:'#6b7079'} },
+          y:{ ticks:{font:{size:11.5}}, grid:{display:false} }
+        }
+      }
+    });
+    _chartInstances.push(chart);
+  });
+}
+
+/* CSV / JSON export */
+function toCSV(rows, columns){
+  const esc2 = v => {
+    if (v==null) v='';
+    v = String(v).replace(/"/g,'""');
+    return /[",\n;]/.test(v) ? `"${v}"` : v;
+  };
+  const head = columns.map(esc2).join(';');
+  const body = rows.map(r=> columns.map(c=>esc2(r[c])).join(';')).join('\n');
+  return head+'\n'+body;
+}
+function download(filename, content, mime){
+  const blob = new Blob([content], {type:mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+function exportCSV(){
+  const info = currentTabInfo();
+  const cols = ['timestamp','kursnummer'];
+  if (info.type==='teacher') cols.push('dozentName');
+  info.sections.forEach(sec=>sec.items.forEach(it=>{
+    cols.push(it.id);
+    if (it.type==='choice_other') cols.push(it.id+'_text');
+    if (it.type==='yesno_text') cols.push(it.id+'_text');
+  }));
+  const rows = info.data.map(r=>{
+    const row = { timestamp: fmtDate(r.timestamp), kursnummer: r.kursnummer, dozentName: r.dozentName };
+    Object.assign(row, r.answers);
+    return row;
+  });
+  const csv = toCSV(rows, cols);
+  download(`evaluation_${S.currentRound.kursnummer}_${info.label}.csv`.replace(/\s+/g,'_'), csv, 'text/csv;charset=utf-8');
+}
+function exportJSON(){
+  const payload = { round:S.currentRound, responses:S.responses };
+  download(`evaluation_${S.currentRound.kursnummer}.json`.replace(/\s+/g,'_'), JSON.stringify(payload,null,2), 'application/json');
+}
+
+function previewParticipant(roundId){
+  S._previewFromAdmin = true;
+  S.currentRoundId = roundId;
+  S.view = 'p_home';
+  render();
+}
+
+function goAdminList(){ S.view='admin_list'; S._justCreated=false; render(); }
+function goCreate(){ S.view='admin_create'; render(); setTimeout(()=>document.getElementById('f_kursnummer')?.focus(),50); }
+
+/* ============================= PARTICIPANT: HOME ============================= */
+
+function renderParticipantHome(){
+  const r = S.currentRound;
+  return topbar(S._previewFromAdmin ? {back:'backToAdminDetail()', backLabel:'Admin-Vorschau beenden'} : {}) + `<div class="wrap">
+    ${S._previewFromAdmin ? `<div class="badge gray" style="margin-bottom:14px">Vorschau — Teilnehmeransicht (Testabgaben werden mitgespeichert)</div>` : ''}
+    <h1>Willkommen!</h1>
+    <p>Helfen Sie uns, unsere Kurse noch besser zu machen. Die Beurteilung dauert nur wenige Minuten.</p>
+
+    <div class="privacy-note">
+      ${ICONS.shield}
+      <p>Ihre Antworten sind <b>anonym</b>. Wir erfassen keinen Namen, keine E-Mail-Adresse und keine sonstigen persönlichen Daten — nur Ihre Bewertungen sowie Kursnummer und Datum zur richtigen Zuordnung.</p>
+    </div>
+
+    <div class="tile" onclick="startCourseEval()">
+      <div class="tile-icon">${ICONS.book}</div>
+      <div class="tile-text"><b>Kurs bewerten</b><span>Inhalte, Organisation, Lernatmosphäre</span></div>
+      <div class="tile-arrow">${ICONS.arrow}</div>
+    </div>
+    <div class="tile" onclick="goTeacherPick()">
+      <div class="tile-icon">${ICONS.user}</div>
+      <div class="tile-text"><b>Dozent:in bewerten</b><span>Ihre Lehrkraft beurteilen</span></div>
+      <div class="tile-arrow">${ICONS.arrow}</div>
+    </div>
+  </div>`;
+}
+
+function backToAdminDetail(){
+  S._previewFromAdmin = false;
+  S.view = 'admin_detail';
+  render();
+}
+
+function goTeacherPick(){ S.view = 'p_teacher_pick'; render(); }
+
+function renderTeacherPick(){
+  const r = S.currentRound;
+  const items = r.dozenten.map(name=>`
+    <div class="tile" onclick="startTeacherEval('${esc(name).replace(/'/g,"\\'")}')">
+      <div class="tile-icon">${ICONS.user}</div>
+      <div class="tile-text"><b>${esc(name)}</b><span>Diese Lehrkraft bewerten</span></div>
+      <div class="tile-arrow">${ICONS.arrow}</div>
+    </div>`).join('');
+  return topbar({back:'goParticipantHome()', backLabel:'Zurück'}) + `<div class="wrap">
+    <h1>Wen möchten Sie bewerten?</h1>
+    <p>Für diesen Kurs können Sie bis zu zwei Dozent:innen beurteilen.</p>
+    ${items || '<div class="muted-card"><p style="margin:0">Für diesen Kurs sind keine Dozent:innen hinterlegt.</p></div>'}
+  </div>`;
+}
+
+function goParticipantHome(){ S.view='p_home'; render(); }
+
+/* ============================= WIZARD ============================= */
+
+function startCourseEval(){
+  S.wizard = { kind:'course', sections:COURSE_SECTIONS, step:-1, answers:{}, errors:{}, dozentName:null };
+  S.view = 'p_course';
+  render();
+}
+function startTeacherEval(name){
+  S.wizard = { kind:'teacher', sections:TEACHER_SECTIONS, step:-1, answers:{}, errors:{}, dozentName:name };
+  S.view = 'p_teacher';
+  render();
+}
+
+/* step -1 = gate (kursnummer / dozent name entry), 0..N-1 = sections, N = review/submit */
+
+function renderWizard(){
+  const w = S.wizard;
+  const total = w.sections.length;
+  const back = w.step <= -1 ? 'goParticipantHome()' : 'wizardBack()';
+
+  let inner;
+  if (w.step === -1){
+    inner = renderGate();
+  } else if (w.step < total){
+    inner = renderSectionStep();
+  } else {
+    inner = renderReview();
+  }
+
+  const progressPct = w.step <= -1 ? 4 : Math.round(((w.step+1)/(total+1))*100);
+
+  return topbar({back, backLabel:'Zurück'}) + `<div class="wrap">
+    <div class="progress-wrap">
+      <div class="progress-track"><div class="progress-fill" style="width:${progressPct}%"></div></div>
+      <div class="progress-label">${w.step<0?'Start':w.step>=total?'Abschluss':`Schritt ${w.step+1}/${total}`}</div>
+    </div>
+    ${inner}
+  </div>`;
+}
+
+function renderGate(){
+  const w = S.wizard;
+  const r = S.currentRound;
+  if (w.kind === 'course'){
+    return `
+    <h1>Kurs bestätigen</h1>
+    <p>Bitte geben Sie zu Beginn Ihre Kursnummer ein. So können wir Ihre anonyme Bewertung dem richtigen Kurs zuordnen.</p>
+    <div class="card">
+      <div class="field" style="margin-bottom:0">
+        <label class="field-label">Kursnummer *</label>
+        <input type="text" id="gate_kursnummer" placeholder="z. B. IK-2026-014" autocomplete="off">
+        <div class="err-text" id="gate_err">Die eingegebene Kursnummer stimmt nicht überein. Bitte prüfen Sie Ihre Einladung.</div>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" onclick="checkGateCourse()">Weiter</button>`;
+  } else {
+    return `
+    <h1>Dozent:in &amp; Kurs bestätigen</h1>
+    <p>Bitte geben Sie den Namen der zu bewertenden Lehrkraft sowie Ihre Kursnummer ein.</p>
+    <div class="card">
+      <div class="field">
+        <label class="field-label">Name des/der Dozent:in *</label>
+        <input type="text" id="gate_dozent" placeholder="Vor- und Nachname" autocomplete="off" value="${esc(w.dozentName||'')}">
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label class="field-label">Kursnummer *</label>
+        <input type="text" id="gate_kursnummer" placeholder="z. B. IK-2026-014" autocomplete="off">
+      </div>
+      <div class="err-text" id="gate_err">Name oder Kursnummer stimmen nicht überein. Bitte prüfen Sie Ihre Angaben.</div>
+    </div>
+    <button class="btn btn-primary btn-block" onclick="checkGateTeacher()">Weiter</button>`;
+  }
+}
+
+function checkGateCourse(){
+  const r = S.currentRound;
+  const val = document.getElementById('gate_kursnummer').value;
+  if (norm(val) !== norm(r.kursnummer)){
+    document.getElementById('gate_err').classList.add('show');
+    document.getElementById('gate_kursnummer').classList.add('err');
+    return;
+  }
+  S.wizard.answers.__kursnummer = val.trim();
+  S.wizard.step = 0;
+  render();
+}
+function checkGateTeacher(){
+  const r = S.currentRound;
+  const nameVal = document.getElementById('gate_dozent').value;
+  const kursVal = document.getElementById('gate_kursnummer').value;
+  const nameOk = r.dozenten.some(d=>norm(d)===norm(nameVal));
+  const kursOk = norm(kursVal) === norm(r.kursnummer);
+  if (!nameOk || !kursOk){
+    document.getElementById('gate_err').classList.add('show');
+    return;
+  }
+  S.wizard.dozentName = r.dozenten.find(d=>norm(d)===norm(nameVal));
+  S.wizard.answers.__kursnummer = kursVal.trim();
+  S.wizard.step = 0;
+  render();
+}
+
+function renderSectionStep(){
+  const w = S.wizard;
+  const sec = w.sections[w.step];
+  const scaleN = sec.scaleType === 'scale5' ? 5 : (sec.scaleType === 'scale4' ? 4 : null);
+  const labels = scaleN===5 ? SCALE5_LABELS : SCALE4_LABELS;
+
+  let body = '';
+  sec.items.forEach(item=>{
+    const itype = item.type || (sec.scaleType ? 'scale' : 'choice');
+    if (itype === 'scale'){
+      const cur = w.answers[item.id];
+      body += `<div class="scale-item">
+        <div class="q">${esc(item.label)}</div>
+        <div class="scale-row">
+          ${Array.from({length:scaleN},(_,i)=>i+1).map(n=>`<button type="button" class="scale-btn ${cur===n?'active':''}" onclick="setScale('${item.id}',${n})">${n}</button>`).join('')}
+        </div>
+        <div class="scale-ends"><span>${labels.left}</span><span>${labels.right}</span></div>
+      </div>`;
+    } else if (itype === 'choice'){
+      body += choiceBlock(item);
+    } else if (itype === 'choice_other'){
+      body += choiceBlock(item, true);
+    } else if (itype === 'yesno'){
+      body += yesNoBlock(item);
+    } else if (itype === 'yesno_text'){
+      body += yesNoBlock(item, true);
+    } else if (itype === 'text'){
+      body += `<div class="field">
+        <label class="field-label">${esc(item.label)}</label>
+        <textarea id="f_${item.id}" oninput="setText('${item.id}', this.value)">${esc(w.answers[item.id]||'')}</textarea>
+      </div>`;
+    }
+  });
+
+  return `
+  <div class="section-title"><h2>${esc(sec.title)}</h2></div>
+  <div class="card">${body}</div>
+  <div class="err-text ${w.errors.section?'show':''}" style="margin-bottom:10px">Bitte beantworten Sie alle Fragen dieses Abschnitts.</div>
+  <div class="btn-row">
+    <button class="btn btn-outline" onclick="wizardBack()">Zurück</button>
+    <button class="btn btn-primary" onclick="wizardNext()">Weiter</button>
+  </div>`;
+}
+
+function choiceBlock(item, withOther){
+  const w = S.wizard;
+  const cur = w.answers[item.id];
+  const showOther = withOther && (cur === 'andere' || cur === 'sonstiges');
+  return `<div class="field">
+    <label class="field-label">${esc(item.label)}</label>
+    <div class="pill-group">
+      ${item.options.map(([val,lbl])=>`<div class="pill ${cur===val?'active':''}" onclick="setChoice('${item.id}','${val}')">${esc(lbl)}</div>`).join('')}
+    </div>
+    ${showOther ? `<textarea style="margin-top:10px" placeholder="Bitte kurz erläutern" oninput="setText('${item.id}_text', this.value)">${esc(w.answers[item.id+'_text']||'')}</textarea>` : ''}
+  </div>`;
+}
+function yesNoBlock(item, withText){
+  const w = S.wizard;
+  const cur = w.answers[item.id];
+  const showText = withText && cur === 'ja';
+  return `<div class="field">
+    <label class="field-label">${esc(item.label)}</label>
+    <div class="yn-group">
+      <div class="pill ${cur==='ja'?'active':''}" onclick="setChoice('${item.id}','ja')">Ja</div>
+      <div class="pill ${cur==='nein'?'active':''}" onclick="setChoice('${item.id}','nein')">Nein</div>
+    </div>
+    ${showText ? `<textarea style="margin-top:10px" placeholder="${esc(item.textLabel||'')}" oninput="setText('${item.id}_text', this.value)">${esc(w.answers[item.id+'_text']||'')}</textarea>` : ''}
+  </div>`;
+}
+
+function setScale(id, n){ S.wizard.answers[id]=n; S.wizard.errors={}; render(); }
+function setChoice(id, val){
+  const w = S.wizard;
+  w.answers[id] = w.answers[id]===val ? null : val;
+  w.errors = {};
+  render();
+}
+function setText(id, val){ S.wizard.answers[id] = val; }
+
+function sectionComplete(sec){
+  const w = S.wizard;
+  return sec.items.every(item=>{
+    const itype = item.type || (sec.scaleType ? 'scale' : 'choice');
+    if (itype === 'text') return true; // optional
+    const v = w.answers[item.id];
+    return v !== undefined && v !== null && v !== '';
+  });
+}
+
+function wizardNext(){
+  const w = S.wizard;
+  const sec = w.sections[w.step];
+  if (!sectionComplete(sec)){
+    w.errors.section = true;
+    render();
+    return;
+  }
+  w.errors = {};
+  w.step++;
+  render();
+}
+function wizardBack(){
+  const w = S.wizard;
+  if (w.step <= -1){ S.view='p_home'; render(); return; }
+  if (w.step === 0){ w.step = -1; render(); return; }
+  w.step--;
+  render();
+}
+
+function renderReview(){
+  const w = S.wizard;
+  const title = w.kind==='course' ? 'Kursevaluation abschicken' : `Beurteilung für ${esc(w.dozentName)} abschicken`;
+  return `
+  <div class="center-state" style="padding-top:10px">
+    <div class="icon-circle">${ICONS.check}</div>
+    <h1 style="text-align:center">${title}</h1>
+    <p>Alle Fragen wurden beantwortet. Ihre Antworten werden anonym gespeichert und können danach nicht mehr geändert werden.</p>
+    <button class="btn btn-primary btn-block" onclick="submitWizard()">Jetzt absenden</button>
+    <button class="btn btn-ghost btn-block" style="margin-top:8px" onclick="S.wizard.step=${w.sections.length-1};render()">Antworten noch einmal prüfen</button>
+  </div>`;
+}
+
+async function submitWizard(){
+  const w = S.wizard;
+  const r = S.currentRound;
+  const type = w.kind === 'course' ? 'course' : ('teacher:'+slug(w.dozentName));
+  await saveResponse(r.id, type, w.dozentName, w.answers);
+  S.submittedThisSession = true;
+  S._lastKind = w.kind;
+  S._lastDozent = w.dozentName;
+  S.view = 'p_done';
+  render();
+}
+
+function renderDone(){
+  const r = S.currentRound;
+  const otherDozent = S._lastKind==='teacher' ? r.dozenten.find(d=>d!==S._lastDozent) : null;
+  return `<div class="wrap"><div class="center-state">
+    <div class="icon-circle">${ICONS.check}</div>
+    <h1>Vielen Dank!</h1>
+    <p>Ihre anonyme Bewertung wurde erfolgreich übermittelt.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+      ${S._lastKind==='course' ? `<button class="btn btn-primary btn-block" onclick="goTeacherPick()">Jetzt Dozent:in bewerten</button>` : ''}
+      ${otherDozent ? `<button class="btn btn-primary btn-block" onclick="startTeacherEval('${esc(otherDozent).replace(/'/g,"\\'")}')">${esc(otherDozent)} bewerten</button>` : ''}
+      <button class="btn btn-outline btn-block" onclick="goParticipantHome()">Zur Übersicht</button>
+    </div>
+  </div></div>`;
+}
+
+/* ============================= INIT ============================= */
+
+async function init(){
+  if (!apiConfigured()){
+    S.view = 'setup_needed';
+    render();
+    return;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const roundId = params.get('round');
+
+  if (roundId){
+    const round = await loadRound(roundId);
+    if (!round){ S.view = 'not_found'; render(); return; }
+    S.currentRound = round;
+    S.currentRoundId = roundId;
+    S.view = 'p_home';
+    render();
+  } else {
+    S.rounds = await loadRounds();
+    S.view = 'admin_list';
+    render();
+  }
+}
+
+init();
+</script>
+</body>
+</html>
