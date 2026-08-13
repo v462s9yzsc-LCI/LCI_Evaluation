@@ -337,8 +337,10 @@ const S = {
   detailTab: 'course',    // course | t0 | t1
   responses: { course: [], t0: [], t1: [] },
   wizard: null,           // { kind:'course'|'teacher', dozentName, step, answers, errors }
-  submittedThisSession: false
+  submittedThisSession: false,
+  adminToken: null
 };
+const ADMIN_TOKEN_KEY = 'lci_admin_token';
 
 /* ============================= STORAGE HELPERS (Google Sheets backend) =============================
    Diese App speichert NICHT im Claude-Speicher (der verlangt ein Claude-Konto), sondern in einem
@@ -348,12 +350,15 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwm5jzXrYoArVAmvskFj1dM
 
 function apiConfigured(){ return API_URL && API_URL.indexOf('https://script.google.com') === 0; }
 
-async function apiGetSheet(sheet){
+async function apiGetSheet(sheet, token){
   if (!apiConfigured()) return [];
   try{
-    const res = await fetch(API_URL + '?sheet=' + encodeURIComponent(sheet) + '&t=' + Date.now());
+    let url = API_URL + '?sheet=' + encodeURIComponent(sheet) + '&t=' + Date.now();
+    if (token) url += '&token=' + encodeURIComponent(token);
+    const res = await fetch(url);
     if (!res.ok) return [];
     const data = await res.json();
+    if (data && !Array.isArray(data) && data.error === 'unauthorized'){ S._authFailed = true; return []; }
     return Array.isArray(data) ? data : [];
   }catch(e){ console.error('apiGetSheet failed', sheet, e); return []; }
 }
@@ -382,6 +387,22 @@ function fmtDate(ts){
          d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) + ' Uhr';
 }
 function norm(s){ return (s||'').trim().toLowerCase().replace(/\s+/g,' '); }
+
+/* Ein-Gerät-Sperre: verhindert, dass dieselbe Person auf demselben Handy/Browser
+   zweimal für denselben Kurs / dieselbe Lehrkraft abstimmt. Da die Evaluation
+   komplett anonym ist (kein Login), ist dies keine 100%-sichere Identitätsprüfung,
+   sondern ein praktischer Schutz gegen versehentliche Doppelabgaben. */
+function doneKey(kind, roundId, dozentSlug){
+  return 'lci_done_' + kind + '_' + roundId + (dozentSlug ? '_'+dozentSlug : '');
+}
+function hasSubmitted(kind, roundId, dozentSlug){
+  try{ return localStorage.getItem(doneKey(kind, roundId, dozentSlug)) === '1'; }
+  catch(e){ return false; }
+}
+function markSubmitted(kind, roundId, dozentSlug){
+  try{ localStorage.setItem(doneKey(kind, roundId, dozentSlug), '1'); }
+  catch(e){}
+}
 function esc(s){
   return (s==null?'':String(s))
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -464,7 +485,7 @@ function rowToResponse(row){
 
 async function loadResponses(roundId, type, dozentSlugFilter){
   const sheet = type === 'course' ? 'course_responses' : 'teacher_responses';
-  const rows = await apiGetSheet(sheet);
+  const rows = await apiGetSheet(sheet, S.adminToken);
   let items = rows.filter(r=> r.roundId === roundId);
   if (dozentSlugFilter) items = items.filter(r=> r.dozentSlug === dozentSlugFilter);
   items = items.map(rowToResponse);
@@ -526,6 +547,7 @@ function topbar(opts){
       <div class="mark">${ICONS.flag}</div>
       <div class="brand-text"><b>language coach institute</b><span>Evaluation</span></div>
       <div class="topbar-spacer"></div>
+      ${opts.logout ? `<a class="back-link" href="javascript:void(0)" onclick="adminLogout()" style="margin-right:14px;color:var(--gray)">Abmelden</a>` : ''}
       ${opts.back ? `<a class="back-link" href="javascript:void(0)" onclick="${opts.back}">${ICONS.arrow.replace('stroke-linecap','transform="rotate(180 12 12)" stroke-linecap')}<span>${opts.backLabel||'Zurück'}</span></a>` : ''}
     </div>
   </div>`;
@@ -535,7 +557,9 @@ async function render(){
   const app = document.getElementById('app');
   let html = '';
 
-  if (S.view === 'setup_needed'){
+  if (S.view === 'admin_login'){
+    html = renderAdminLogin();
+  } else if (S.view === 'setup_needed'){
     html = topbar() + `<div class="wrap"><div class="card">
       <div class="eyebrow">Einrichtung nötig</div>
       <h2>Google-Sheet-Anbindung fehlt noch</h2>
@@ -587,7 +611,7 @@ function renderAdminList(){
     </div>`;
   }).join('');
 
-  return topbar() + `<div class="wrap">
+  return topbar({logout:true}) + `<div class="wrap">
     <div class="eyebrow">Admin</div>
     <h1>Evaluationen</h1>
     <p>Erstellen Sie für jeden Kurs eine eigene Evaluationsrunde und versenden Sie den passenden Link an Ihre Teilnehmer.</p>
@@ -601,7 +625,7 @@ function renderAdminList(){
 }
 
 function renderAdminCreate(){
-  return topbar({back:'goAdminList()', backLabel:'Übersicht'}) + `<div class="wrap">
+  return topbar({back:'goAdminList()', backLabel:'Übersicht', logout:true}) + `<div class="wrap">
     <div class="eyebrow">Neue Evaluation</div>
     <h1>Kurs anlegen</h1>
     <p>Diese Angaben dienen nur der eindeutigen Zuordnung der Antworten. Es werden keine Teilnehmerdaten erhoben.</p>
@@ -658,7 +682,17 @@ async function openRoundDetail(id, justCreated){
   const round = await loadRound(id);
   if (!round){ toast('Evaluation nicht gefunden.'); S.view='admin_list'; render(); return; }
   S.currentRound = round;
+  S._authFailed = false;
   S.responses = await loadAllResponsesForRound(round);
+  if (S._authFailed){
+    S._authFailed = false;
+    S.adminToken = null;
+    try{ localStorage.removeItem(ADMIN_TOKEN_KEY); }catch(e){}
+    S._loginError = 'Falsches Passwort. Bitte erneut versuchen.';
+    S.view = 'admin_login';
+    render();
+    return;
+  }
   S.detailTab = 'course';
   S.view = 'admin_detail';
   S._justCreated = !!justCreated;
@@ -674,7 +708,7 @@ function renderAdminDetail(){
   if (r.dozenten[0]) tabs.push({id:'t0', label:r.dozenten[0], n:S.responses.t0.length});
   if (r.dozenten[1]) tabs.push({id:'t1', label:r.dozenten[1], n:S.responses.t1.length});
 
-  return topbar({wide:true, back:'goAdminList()', backLabel:'Übersicht'}) + `<div class="wrap wide">
+  return topbar({wide:true, back:'goAdminList()', backLabel:'Übersicht', logout:true}) + `<div class="wrap wide">
     <div class="eyebrow">Auswertung</div>
     <h1 style="margin-bottom:2px">${esc(r.kursnummer)}</h1>
     <p>${r.kursname ? esc(r.kursname)+' · ' : ''}${r.dozenten.map(esc).join(' & ') || 'keine Dozenten hinterlegt'}</p>
@@ -917,10 +951,51 @@ function previewParticipant(roundId){
 function goAdminList(){ S.view='admin_list'; S._justCreated=false; render(); }
 function goCreate(){ S.view='admin_create'; render(); setTimeout(()=>document.getElementById('f_kursnummer')?.focus(),50); }
 
+/* ============================= ADMIN: LOGIN ============================= */
+
+function renderAdminLogin(){
+  return topbar() + `<div class="wrap">
+    <div class="eyebrow">Admin</div>
+    <h1>Anmelden</h1>
+    <p>Die Auswertungen sind passwortgeschützt und nur für Sie als Admin sichtbar — Teilnehmer:innen, die eine Bewertung abgeben, sehen diesen Bereich nie.</p>
+    <div class="card">
+      <div class="field" style="margin-bottom:0">
+        <label class="field-label">Admin-Passwort</label>
+        <input type="text" id="f_admin_pw" placeholder="Passwort" autocomplete="off" onkeydown="if(event.key==='Enter')adminLogin()">
+        <div class="err-text ${S._loginError?'show':''}">${S._loginError||''}</div>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" onclick="adminLogin()">Anmelden</button>
+    <p class="hint" style="margin-top:14px">Das Passwort wurde beim Einrichten des Google-Skripts als „ADMIN_TOKEN" festgelegt.</p>
+  </div>`;
+}
+
+async function adminLogin(){
+  const pw = document.getElementById('f_admin_pw').value.trim();
+  if (!pw){ S._loginError='Bitte Passwort eingeben.'; render(); return; }
+  S.adminToken = pw;
+  try{ localStorage.setItem(ADMIN_TOKEN_KEY, pw); }catch(e){}
+  S._loginError = null;
+  S.view = 'loading'; render();
+  S.rounds = await loadRounds();
+  S.view = 'admin_list';
+  render();
+}
+
+function adminLogout(){
+  S.adminToken = null;
+  try{ localStorage.removeItem(ADMIN_TOKEN_KEY); }catch(e){}
+  S._loginError = null;
+  S.view = 'admin_login';
+  render();
+}
+
 /* ============================= PARTICIPANT: HOME ============================= */
 
 function renderParticipantHome(){
   const r = S.currentRound;
+  const courseDone = hasSubmitted('course', r.id);
+  const teacherDoneAll = r.dozenten.length>0 && r.dozenten.every(d=>hasSubmitted('teacher', r.id, slug(d)));
   return topbar(S._previewFromAdmin ? {back:'backToAdminDetail()', backLabel:'Admin-Vorschau beenden'} : {}) + `<div class="wrap">
     ${S._previewFromAdmin ? `<div class="badge gray" style="margin-bottom:14px">Vorschau — Teilnehmeransicht (Testabgaben werden mitgespeichert)</div>` : ''}
     <h1>Willkommen!</h1>
@@ -931,17 +1006,23 @@ function renderParticipantHome(){
       <p>Ihre Antworten sind <b>anonym</b>. Wir erfassen keinen Namen, keine E-Mail-Adresse und keine sonstigen persönlichen Daten — nur Ihre Bewertungen sowie Kursnummer und Datum zur richtigen Zuordnung.</p>
     </div>
 
-    <div class="tile" onclick="startCourseEval()">
-      <div class="tile-icon">${ICONS.book}</div>
-      <div class="tile-text"><b>Kurs bewerten</b><span>Inhalte, Organisation, Lernatmosphäre</span></div>
-      <div class="tile-arrow">${ICONS.arrow}</div>
-    </div>
-    <div class="tile" onclick="goTeacherPick()">
-      <div class="tile-icon">${ICONS.user}</div>
-      <div class="tile-text"><b>Dozent:in bewerten</b><span>Ihre Lehrkraft beurteilen</span></div>
-      <div class="tile-arrow">${ICONS.arrow}</div>
-    </div>
+    ${tileOrDone(courseDone, 'startCourseEval()', ICONS.book, 'Kurs bewerten', 'Inhalte, Organisation, Lernatmosphäre')}
+    ${tileOrDone(teacherDoneAll, 'goTeacherPick()', ICONS.user, 'Dozent:in bewerten', 'Ihre Lehrkraft beurteilen')}
   </div>`;
+}
+
+function tileOrDone(done, onclick, icon, title, subtitle){
+  if (done){
+    return `<div class="tile" style="opacity:.55;cursor:default" onclick="toast('Für diesen Kurs bereits abgegeben — vielen Dank!')">
+      <div class="tile-icon" style="background:var(--good-pale);color:var(--good)">${ICONS.check}</div>
+      <div class="tile-text"><b>${esc(title)}</b><span>Bereits abgegeben — danke!</span></div>
+    </div>`;
+  }
+  return `<div class="tile" onclick="${onclick}">
+      <div class="tile-icon">${icon}</div>
+      <div class="tile-text"><b>${esc(title)}</b><span>${esc(subtitle)}</span></div>
+      <div class="tile-arrow">${ICONS.arrow}</div>
+    </div>`;
 }
 
 function backToAdminDetail(){
@@ -954,12 +1035,10 @@ function goTeacherPick(){ S.view = 'p_teacher_pick'; render(); }
 
 function renderTeacherPick(){
   const r = S.currentRound;
-  const items = r.dozenten.map(name=>`
-    <div class="tile" onclick="startTeacherEval('${esc(name).replace(/'/g,"\\'")}')">
-      <div class="tile-icon">${ICONS.user}</div>
-      <div class="tile-text"><b>${esc(name)}</b><span>Diese Lehrkraft bewerten</span></div>
-      <div class="tile-arrow">${ICONS.arrow}</div>
-    </div>`).join('');
+  const items = r.dozenten.map(name=>{
+    const done = hasSubmitted('teacher', r.id, slug(name));
+    return tileOrDone(done, `startTeacherEval('${esc(name).replace(/'/g,"\\'")}')`, ICONS.user, name, 'Diese Lehrkraft bewerten');
+  }).join('');
   return topbar({back:'goParticipantHome()', backLabel:'Zurück'}) + `<div class="wrap">
     <h1>Wen möchten Sie bewerten?</h1>
     <p>Für diesen Kurs können Sie bis zu zwei Dozent:innen beurteilen.</p>
@@ -972,11 +1051,15 @@ function goParticipantHome(){ S.view='p_home'; render(); }
 /* ============================= WIZARD ============================= */
 
 function startCourseEval(){
+  if (hasSubmitted('course', S.currentRound.id)){ toast('Für diesen Kurs bereits abgegeben — vielen Dank!'); goParticipantHome(); return; }
   S.wizard = { kind:'course', sections:COURSE_SECTIONS, step:-1, answers:{}, errors:{}, dozentName:null };
   S.view = 'p_course';
   render();
 }
 function startTeacherEval(name){
+  const r = S.currentRound;
+  const canonical = r.dozenten.find(d=>norm(d)===norm(name)) || name;
+  if (hasSubmitted('teacher', r.id, slug(canonical))){ toast('Für diese Lehrkraft bereits abgegeben — vielen Dank!'); goTeacherPick(); return; }
   S.wizard = { kind:'teacher', sections:TEACHER_SECTIONS, step:-1, answers:{}, errors:{}, dozentName:name };
   S.view = 'p_teacher';
   render();
@@ -1198,6 +1281,8 @@ async function submitWizard(){
   const r = S.currentRound;
   const type = w.kind === 'course' ? 'course' : ('teacher:'+slug(w.dozentName));
   await saveResponse(r.id, type, w.dozentName, w.answers);
+  if (w.kind === 'course') markSubmitted('course', r.id);
+  else markSubmitted('teacher', r.id, slug(w.dozentName));
   S.submittedThisSession = true;
   S._lastKind = w.kind;
   S._lastDozent = w.dozentName;
@@ -1207,13 +1292,15 @@ async function submitWizard(){
 
 function renderDone(){
   const r = S.currentRound;
-  const otherDozent = S._lastKind==='teacher' ? r.dozenten.find(d=>d!==S._lastDozent) : null;
+  let otherDozent = S._lastKind==='teacher' ? r.dozenten.find(d=>d!==S._lastDozent) : null;
+  if (otherDozent && hasSubmitted('teacher', r.id, slug(otherDozent))) otherDozent = null;
+  const courseDone = hasSubmitted('course', r.id);
   return `<div class="wrap"><div class="center-state">
     <div class="icon-circle">${ICONS.check}</div>
     <h1>Vielen Dank!</h1>
     <p>Ihre anonyme Bewertung wurde erfolgreich übermittelt.</p>
     <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
-      ${S._lastKind==='course' ? `<button class="btn btn-primary btn-block" onclick="goTeacherPick()">Jetzt Dozent:in bewerten</button>` : ''}
+      ${S._lastKind==='course' && r.dozenten.length ? `<button class="btn btn-primary btn-block" onclick="goTeacherPick()">Jetzt Dozent:in bewerten</button>` : ''}
       ${otherDozent ? `<button class="btn btn-primary btn-block" onclick="startTeacherEval('${esc(otherDozent).replace(/'/g,"\\'")}')">${esc(otherDozent)} bewerten</button>` : ''}
       <button class="btn btn-outline btn-block" onclick="goParticipantHome()">Zur Übersicht</button>
     </div>
@@ -1239,6 +1326,12 @@ async function init(){
     S.view = 'p_home';
     render();
   } else {
+    try{ S.adminToken = localStorage.getItem(ADMIN_TOKEN_KEY) || null; }catch(e){ S.adminToken = null; }
+    if (!S.adminToken){
+      S.view = 'admin_login';
+      render();
+      return;
+    }
     S.rounds = await loadRounds();
     S.view = 'admin_list';
     render();
