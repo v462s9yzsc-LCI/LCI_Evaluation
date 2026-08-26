@@ -536,6 +536,12 @@ async function loadAllResponsesForRound(round){
   const t1 = round.dozenten[1] ? await loadResponses(round.id, 'teacher', slug(round.dozenten[1])) : [];
   return { course, t0, t1 };
 }
+async function loadReviewedSignatures(roundId){
+  const rows = await apiGetSheet('reviewed_clusters', S.adminToken);
+  const set = new Set();
+  rows.filter(r=>r.roundId===roundId).forEach(r=>{ if (r.sheet && r.signature) set.add(r.sheet+'|'+r.signature); });
+  return set;
+}
 function slug(name){ return norm(name).replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
 
 /* ============================= URL / LINK ============================= */
@@ -768,6 +774,7 @@ async function openRoundDetail(id, justCreated){
   S.currentRound = round;
   S._authFailed = false;
   S.responses = await loadAllResponsesForRound(round);
+  S.reviewedSignatures = await loadReviewedSignatures(round.id);
   if (S._authFailed){
     S._authFailed = false;
     S.adminToken = null;
@@ -916,60 +923,71 @@ function findDuplicateGroups(data, windowMs){
 }
 
 function renderDuplicateWarning(info){
-  const groups = findDuplicateGroups(info.data);
-  S._dupInfo = null;
-  if (!groups.length) return '';
   const sheet = info.type === 'course' ? 'course_responses' : 'teacher_responses';
-  S._dupInfo = { sheet, groups, totalCount: info.data.length };
-  const extra = groups.reduce((sum,g)=>sum+g.length-1, 0);
-  const rows = groups.map(g=>{
+  const rawGroups = findDuplicateGroups(info.data);
+  const reviewed = S.reviewedSignatures || new Set();
+  const groups = rawGroups.filter(g=>{
+    const sig = g.map(r=>r.id).sort().join('|');
+    return !reviewed.has(sheet+'|'+sig);
+  });
+  S._dupGroups = groups.map(g=>({ sheet, cluster:g, signature:g.map(r=>r.id).sort().join('|') }));
+  if (!groups.length) return '';
+
+  const cards = S._dupGroups.map((entry, idx)=>{
+    const g = entry.cluster;
     const times = g.map(r=>new Date(r.timestamp).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'})).join(' · ');
-    return `<div style="font-size:12.5px;color:var(--gray);margin-bottom:4px">Kursnummer ${esc(g[0].kursnummer)} — ${g.length}× identische Abgabe um ${times} Uhr</div>`;
+    return `<div class="muted-card" style="border-color:var(--warn);margin-bottom:10px">
+      <div style="font-size:12.5px;color:var(--ink);margin-bottom:10px"><b>Kursnummer ${esc(g[0].kursnummer)}</b> — ${g.length}× identische Abgabe um ${times} Uhr</div>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn btn-outline btn-sm" style="border-color:var(--warn);color:var(--warn)" onclick="removeDuplicateGroup(${idx})">Duplikate entfernen (${g.length-1})</button>
+        <button class="btn btn-ghost btn-sm" onclick="markGroupReviewed(${idx})">Geprüft — alle ${g.length} behalten</button>
+      </div>
+    </div>`;
   }).join('');
+
   return `<div class="card" style="border-color:var(--warn);background:#fff9ef">
     <h3 style="color:var(--warn);margin-bottom:8px">⚠ Mögliche Doppel-Abgaben erkannt</h3>
-    <p style="margin-bottom:10px">${extra} Antwort(en) stimmen inhaltlich exakt mit einer anderen Abgabe für dieselbe Kursnummer innerhalb weniger Sekunden überein — meist entsteht das durch mehrfaches Tippen auf „Absenden", wenn die Seite kurz nicht reagiert. Das enge Zeitfenster verhindert, dass zwei verschiedene Personen mit zufällig ähnlichen Antworten fälschlich als Duplikat gelten. Die jeweils früheste Abgabe bleibt in jedem Fall erhalten — bitte trotzdem kurz die Uhrzeiten unten prüfen, bevor Sie löschen.</p>
-    ${rows}
-    <button class="btn btn-outline btn-sm" style="margin-top:10px;border-color:var(--warn);color:var(--warn)" onclick="removeDuplicates()">Erkannte Duplikate entfernen (${extra})</button>
+    <p style="margin-bottom:12px">Diese Gruppen enthalten Antworten, die inhaltlich exakt mit einer anderen Abgabe für dieselbe Kursnummer innerhalb weniger Sekunden übereinstimmen. Bitte für jede Gruppe einzeln entscheiden: Sprechen die Uhrzeiten (nur Sekunden auseinander) für einen Doppel-Tap derselben Person → „Duplikate entfernen". Könnten es stattdessen zwei verschiedene Personen mit zufällig/absichtlich identischen Antworten sein → „Geprüft — alle behalten". Eine als geprüft markierte Gruppe wird danach nicht erneut gemeldet.</p>
+    ${cards}
   </div>`;
 }
 
-async function removeDuplicates(){
-  const dup = S._dupInfo;
-  if (!dup || !dup.groups.length) return;
-  const extra = dup.groups.reduce((sum,g)=>sum+g.length-1,0);
-  const total = dup.groups.reduce((sum,g)=>sum+g.length,0); // Näherung: Anzahl betroffener Zeilen in den erkannten Gruppen
-  // Sicherheitsbremse: Duplikate durch Doppel-Tap betreffen normalerweise nur
-  // einzelne, kleine Cluster. Löscht die Erkennung auf einmal einen sehr großen
-  // UND absolut hohen Anteil aller Antworten, ist das ein Warnsignal für einen
-  // Fehler in der Erkennung selbst — dann lieber stoppen und manuell prüfen
-  // lassen. (Beide Bedingungen müssen zutreffen, damit ein paar echte
-  // Doppel-Taps bei kleinen bis mittleren Kursgrößen nicht unnötig blockiert werden.)
-  if (extra > 15 && extra > Math.ceil(dup.totalCount * 0.4)){
-    window.alert(`Sicherheitshinweis: Es wurden ${extra} Antworten als Duplikate erkannt — das ist ein ungewöhnlich großer Anteil aller Antworten.\n\nUm versehentliches Löschen echter Antworten zu vermeiden, wird die automatische Entfernung hier gestoppt. Bitte prüfen Sie die Liste oben manuell (Kursnummer/Uhrzeiten) und wenden Sie sich im Zweifel an den Support, bevor Sie fortfahren.`);
-    return;
-  }
-  const ok = window.confirm(`${extra} doppelte Antwort(en) entfernen?\n\nJeweils die früheste Abgabe pro Gruppe bleibt erhalten. Dies kann nicht rückgängig gemacht werden.`);
+async function removeDuplicateGroup(idx){
+  const entry = S._dupGroups && S._dupGroups[idx];
+  if (!entry) return;
+  const g = entry.cluster;
+  const keepTime = new Date(g[0].timestamp).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const ok = window.confirm(`${g.length-1} doppelte Antwort(en) in dieser Gruppe entfernen?\n\nDie früheste Abgabe (${keepTime} Uhr) bleibt erhalten. Dies kann nicht rückgängig gemacht werden.`);
   if (!ok) return;
-  const ids = [];
-  dup.groups.forEach(g=>{ g.slice(1).forEach(r=>{ if (r.id) ids.push(r.id); }); });
-  if (!ids.length){ toast('Keine löschbaren Einträge gefunden (fehlende ID — vermutlich vor dem Update gespeichert).'); return; }
+  const ids = g.slice(1).map(r=>r.id).filter(Boolean);
+  if (!ids.length){ toast('Keine löschbaren Einträge gefunden (fehlende ID).'); return; }
   toast('Wird entfernt …');
-  const result = await apiDeleteResponses(dup.sheet, ids, S.adminToken);
+  const result = await apiDeleteResponses(entry.sheet, ids, S.adminToken);
   if (!result || result.ok !== true){
     const reason = result && result.error === 'unauthorized'
       ? 'Admin-Passwort wurde vom Server abgelehnt.'
       : (result ? `Serverantwort: ${JSON.stringify(result)}` : 'Keine Antwort vom Server erhalten (Code.gs vermutlich noch nicht aktualisiert/neu bereitgestellt, oder Netzwerkproblem).');
-    toast('Löschen fehlgeschlagen.');
-    window.alert(`Die Duplikate konnten NICHT entfernt werden.\n\n${reason}\n\nBitte prüfen Sie, ob Code.gs die deleteResponses-Funktion enthält und als neue Version bereitgestellt wurde.`);
+    window.alert(`Die Duplikate konnten NICHT entfernt werden.\n\n${reason}`);
     return;
   }
-  if (result.deleted === 0){
-    window.alert('Der Server hat 0 Einträge gelöscht — vermutlich stimmen die IDs nicht mehr mit dem aktuellen Sheet überein (z. B. weil zwischenzeitlich bereits manuell etwas geändert wurde). Bitte Seite neu laden und erneut versuchen.');
-    await openRoundDetail(S.currentRound.id);
+  toast(`${result.deleted||0} Duplikat(e) entfernt.`);
+  await openRoundDetail(S.currentRound.id);
+}
+
+async function markGroupReviewed(idx){
+  const entry = S._dupGroups && S._dupGroups[idx];
+  if (!entry) return;
+  const ok = window.confirm(`Diese ${entry.cluster.length} Abgaben als geprüft markieren und alle behalten?\n\nSie werden danach nicht mehr als mögliches Duplikat angezeigt.`);
+  if (!ok) return;
+  toast('Wird gespeichert …');
+  const result = await apiAppend('reviewed_clusters', {
+    id: uid(), roundId: S.currentRound.id, sheet: entry.sheet, signature: entry.signature, reviewedAt: Date.now()
+  });
+  if (!result || result.ok !== true){
+    window.alert(`Konnte nicht gespeichert werden.\n\n${result ? 'Serverantwort: '+JSON.stringify(result) : 'Keine Antwort vom Server.'}`);
     return;
   }
-  toast(`${result.deleted} Duplikat(e) entfernt.`);
+  toast('Als geprüft markiert.');
   await openRoundDetail(S.currentRound.id);
 }
 
