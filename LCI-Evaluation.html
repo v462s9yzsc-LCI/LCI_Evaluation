@@ -898,7 +898,11 @@ function findDuplicateGroups(data, windowMs){
     const cluster = [sorted[i]];
     for (let j=i+1;j<sorted.length;j++){
       if (used.has(j)) continue;
-      if (sorted[j].timestamp - sorted[i].timestamp > windowMs) continue;
+      // WICHTIG: "break", nicht "continue" — sorted ist zeitlich aufsteigend sortiert,
+      // sobald ein Eintrag außerhalb des Zeitfensters liegt, liegen alle folgenden
+      // Einträge erst recht außerhalb. Ein "continue" hätte (Bug, jetzt behoben) die
+      // Suche über das ganze restliche Zeitfenster fortgesetzt statt hier zu stoppen.
+      if (sorted[j].timestamp - sorted[i].timestamp > windowMs) break;
       if (sorted[j].kursnummer === sorted[i].kursnummer &&
           sorted[j].dozentName === sorted[i].dozentName &&
           sameAnswers(sorted[i], sorted[j])){
@@ -916,7 +920,7 @@ function renderDuplicateWarning(info){
   S._dupInfo = null;
   if (!groups.length) return '';
   const sheet = info.type === 'course' ? 'course_responses' : 'teacher_responses';
-  S._dupInfo = { sheet, groups };
+  S._dupInfo = { sheet, groups, totalCount: info.data.length };
   const extra = groups.reduce((sum,g)=>sum+g.length-1, 0);
   const rows = groups.map(g=>{
     const times = g.map(r=>new Date(r.timestamp).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'})).join(' · ');
@@ -934,14 +938,37 @@ async function removeDuplicates(){
   const dup = S._dupInfo;
   if (!dup || !dup.groups.length) return;
   const extra = dup.groups.reduce((sum,g)=>sum+g.length-1,0);
+  const total = dup.groups.reduce((sum,g)=>sum+g.length,0); // Näherung: Anzahl betroffener Zeilen in den erkannten Gruppen
+  // Sicherheitsbremse: Duplikate durch Doppel-Tap betreffen normalerweise nur
+  // einzelne, kleine Cluster. Will die Erkennung auf einmal einen sehr großen
+  // Anteil aller Antworten löschen, ist das ein Warnsignal für einen Fehler in
+  // der Erkennung selbst — dann lieber stoppen und manuell prüfen lassen, statt
+  // möglicherweise einen Großteil echter Daten zu entfernen.
+  if (extra > 5 || extra > Math.ceil(dup.totalCount * 0.3)){
+    window.alert(`Sicherheitshinweis: Es wurden ${extra} Antworten als Duplikate erkannt — das ist ungewöhnlich viel für einzelne Doppel-Taps.\n\nUm versehentliches Löschen echter Antworten zu vermeiden, wird die automatische Entfernung hier gestoppt. Bitte prüfen Sie die Liste oben manuell (Kursnummer/Uhrzeiten) und wenden Sie sich im Zweifel an den Support, bevor Sie fortfahren.`);
+    return;
+  }
   const ok = window.confirm(`${extra} doppelte Antwort(en) entfernen?\n\nJeweils die früheste Abgabe pro Gruppe bleibt erhalten. Dies kann nicht rückgängig gemacht werden.`);
   if (!ok) return;
   const ids = [];
   dup.groups.forEach(g=>{ g.slice(1).forEach(r=>{ if (r.id) ids.push(r.id); }); });
   if (!ids.length){ toast('Keine löschbaren Einträge gefunden (fehlende ID — vermutlich vor dem Update gespeichert).'); return; }
   toast('Wird entfernt …');
-  await apiDeleteResponses(dup.sheet, ids, S.adminToken);
-  toast('Duplikate entfernt.');
+  const result = await apiDeleteResponses(dup.sheet, ids, S.adminToken);
+  if (!result || result.ok !== true){
+    const reason = result && result.error === 'unauthorized'
+      ? 'Admin-Passwort wurde vom Server abgelehnt.'
+      : (result ? `Serverantwort: ${JSON.stringify(result)}` : 'Keine Antwort vom Server erhalten (Code.gs vermutlich noch nicht aktualisiert/neu bereitgestellt, oder Netzwerkproblem).');
+    toast('Löschen fehlgeschlagen.');
+    window.alert(`Die Duplikate konnten NICHT entfernt werden.\n\n${reason}\n\nBitte prüfen Sie, ob Code.gs die deleteResponses-Funktion enthält und als neue Version bereitgestellt wurde.`);
+    return;
+  }
+  if (result.deleted === 0){
+    window.alert('Der Server hat 0 Einträge gelöscht — vermutlich stimmen die IDs nicht mehr mit dem aktuellen Sheet überein (z. B. weil zwischenzeitlich bereits manuell etwas geändert wurde). Bitte Seite neu laden und erneut versuchen.');
+    await openRoundDetail(S.currentRound.id);
+    return;
+  }
+  toast(`${result.deleted} Duplikat(e) entfernt.`);
   await openRoundDetail(S.currentRound.id);
 }
 
