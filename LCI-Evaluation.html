@@ -346,7 +346,7 @@ const ADMIN_TOKEN_KEY = 'lci_admin_token';
    Diese App speichert NICHT im Claude-Speicher (der verlangt ein Claude-Konto), sondern in einem
    eigenen Google Sheet über ein kostenloses Google Apps Script Web App. Teilnehmer benötigen dafür
    kein Konto. Bitte die Web-App-URL nach dem Deployment hier eintragen: */
-const API_URL = 'https://script.google.com/macros/s/AKfycbwm5jzXrYoArVAmvskFj1dMmU9c67NINuZygbEhd5v_aPzFr7XnU4uMtNkxawhjQQ/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycby-Ftf74CQkKmGIRA_G4lz1i0WGGkTwuCiUpX9OMwkhXyjoTumI0EQo6je9hG_QDw/exec';
 
 function apiConfigured(){ return API_URL && API_URL.indexOf('https://script.google.com') === 0; }
 
@@ -383,6 +383,17 @@ async function apiDeleteRound(roundId, token){
     });
     return await res.json();
   }catch(e){ console.error('apiDeleteRound failed', e); return null; }
+}
+async function apiDeleteResponses(sheet, ids, token){
+  if (!apiConfigured()) return null;
+  try{
+    const res = await fetch(API_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action:'deleteResponses', sheet, ids, token })
+    });
+    return await res.json();
+  }catch(e){ console.error('apiDeleteResponses failed', e); return null; }
 }
 
 function uid(){
@@ -487,7 +498,10 @@ async function saveResponse(roundId, type, dozentName, answers){
     timestamp: Date.now()
   }, type !== 'course' ? { dozentName: dozentName||'', dozentSlug: slug(dozentName||'') } : {});
   Object.keys(answers).forEach(k=>{ if (k !== '__kursnummer') record[k] = answers[k]; });
-  await apiAppend(sheet, record);
+  const result = await apiAppend(sheet, record);
+  if (!result || result.ok !== true){
+    throw new Error('save failed'); // Netzwerkfehler nicht stillschweigend als Erfolg behandeln
+  }
   return record;
 }
 
@@ -497,6 +511,7 @@ function rowToResponse(row){
     if (!['id','roundId','kursnummer','timestamp','dozentName','dozentSlug'].includes(k)) answers[k] = row[k];
   });
   return {
+    id: row.id || null,
     roundId: row.roundId,
     dozentName: row.dozentName || null,
     kursnummer: row.kursnummer || '',
@@ -854,12 +869,89 @@ function currentTabInfo(){
   return { type:'teacher', sections:TEACHER_SECTIONS, data:S.responses.t1, label:r.dozenten[1] };
 }
 
+/* ============================= DOPPEL-ABGABEN ERKENNEN ============================= */
+/* Erkennt Antworten, die inhaltlich exakt mit einer anderen Abgabe für dieselbe
+   Kursnummer/Lehrkraft innerhalb weniger Sekunden übereinstimmen — typisches Muster
+   eines Mehrfach-Tippens auf "Absenden" bei langsamer Verbindung, nicht zweier
+   verschiedener Personen mit zufällig identischen Antworten. */
+function sameAnswers(a, b){
+  const keys = new Set([...Object.keys(a.answers||{}), ...Object.keys(b.answers||{})]);
+  for (const k of keys){
+    const av = a.answers[k], bv = b.answers[k];
+    if (String(av==null?'':av) !== String(bv==null?'':bv)) return false;
+  }
+  return true;
+}
+function findDuplicateGroups(data, windowMs){
+  // Absichtlich eng: ein echter Doppel-Tap passiert innerhalb weniger Sekunden
+  // (derselbe Finger, derselbe Moment). Zwei verschiedene Personen mit zufällig
+  // identischen Antworten treffen so gut wie nie exakt dieselbe Sekunde —
+  // ein zu großzügiges Zeitfenster würde bei vielen zeitgleichen echten
+  // Abgaben (z. B. 20 Personen im selben 10-Minuten-Fenster) zu Fehlalarmen
+  // führen und im schlimmsten Fall echte, unterschiedliche Antworten löschen.
+  windowMs = windowMs || 20*1000;
+  const sorted = data.slice().sort((a,b)=>a.timestamp-b.timestamp);
+  const used = new Set();
+  const groups = [];
+  for (let i=0;i<sorted.length;i++){
+    if (used.has(i)) continue;
+    const cluster = [sorted[i]];
+    for (let j=i+1;j<sorted.length;j++){
+      if (used.has(j)) continue;
+      if (sorted[j].timestamp - sorted[i].timestamp > windowMs) continue;
+      if (sorted[j].kursnummer === sorted[i].kursnummer &&
+          sorted[j].dozentName === sorted[i].dozentName &&
+          sameAnswers(sorted[i], sorted[j])){
+        cluster.push(sorted[j]);
+        used.add(j);
+      }
+    }
+    if (cluster.length > 1){ used.add(i); groups.push(cluster); }
+  }
+  return groups; // jede Gruppe zeitlich aufsteigend sortiert: [0] bleibt, Rest wird entfernt
+}
+
+function renderDuplicateWarning(info){
+  const groups = findDuplicateGroups(info.data);
+  S._dupInfo = null;
+  if (!groups.length) return '';
+  const sheet = info.type === 'course' ? 'course_responses' : 'teacher_responses';
+  S._dupInfo = { sheet, groups };
+  const extra = groups.reduce((sum,g)=>sum+g.length-1, 0);
+  const rows = groups.map(g=>{
+    const times = g.map(r=>new Date(r.timestamp).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'})).join(' · ');
+    return `<div style="font-size:12.5px;color:var(--gray);margin-bottom:4px">Kursnummer ${esc(g[0].kursnummer)} — ${g.length}× identische Abgabe um ${times} Uhr</div>`;
+  }).join('');
+  return `<div class="card" style="border-color:var(--warn);background:#fff9ef">
+    <h3 style="color:var(--warn);margin-bottom:8px">⚠ Mögliche Doppel-Abgaben erkannt</h3>
+    <p style="margin-bottom:10px">${extra} Antwort(en) stimmen inhaltlich exakt mit einer anderen Abgabe für dieselbe Kursnummer innerhalb weniger Sekunden überein — meist entsteht das durch mehrfaches Tippen auf „Absenden", wenn die Seite kurz nicht reagiert. Das enge Zeitfenster verhindert, dass zwei verschiedene Personen mit zufällig ähnlichen Antworten fälschlich als Duplikat gelten. Die jeweils früheste Abgabe bleibt in jedem Fall erhalten — bitte trotzdem kurz die Uhrzeiten unten prüfen, bevor Sie löschen.</p>
+    ${rows}
+    <button class="btn btn-outline btn-sm" style="margin-top:10px;border-color:var(--warn);color:var(--warn)" onclick="removeDuplicates()">Erkannte Duplikate entfernen (${extra})</button>
+  </div>`;
+}
+
+async function removeDuplicates(){
+  const dup = S._dupInfo;
+  if (!dup || !dup.groups.length) return;
+  const extra = dup.groups.reduce((sum,g)=>sum+g.length-1,0);
+  const ok = window.confirm(`${extra} doppelte Antwort(en) entfernen?\n\nJeweils die früheste Abgabe pro Gruppe bleibt erhalten. Dies kann nicht rückgängig gemacht werden.`);
+  if (!ok) return;
+  const ids = [];
+  dup.groups.forEach(g=>{ g.slice(1).forEach(r=>{ if (r.id) ids.push(r.id); }); });
+  if (!ids.length){ toast('Keine löschbaren Einträge gefunden (fehlende ID — vermutlich vor dem Update gespeichert).'); return; }
+  toast('Wird entfernt …');
+  await apiDeleteResponses(dup.sheet, ids, S.adminToken);
+  toast('Duplikate entfernt.');
+  await openRoundDetail(S.currentRound.id);
+}
+
 function renderDetailContent(){
   const info = currentTabInfo();
   const n = info.data.length;
   const last = n ? info.data[info.data.length-1].timestamp : null;
 
-  let out = `<div class="stat-grid">
+  let out = renderDuplicateWarning(info);
+  out += `<div class="stat-grid">
     <div class="stat-box"><div class="num">${n}</div><div class="lbl">Antworten</div></div>
     <div class="stat-box"><div class="num">${info.sections.reduce((a,s)=>a+s.items.length,0)}</div><div class="lbl">Fragen</div></div>
     <div class="stat-box"><div class="num" style="font-size:14px;padding-top:5px">${last? fmtDate(last).split(',')[0] : '–'}</div><div class="lbl">Letzte Antwort</div></div>
@@ -1442,23 +1534,39 @@ function renderReview(){
     <div class="icon-circle">${ICONS.check}</div>
     <h1 style="text-align:center">${title}</h1>
     <p>Alle Fragen wurden beantwortet. Ihre Antworten werden anonym gespeichert und können danach nicht mehr geändert werden.</p>
-    <button class="btn btn-primary btn-block" onclick="submitWizard()">Jetzt absenden</button>
-    <button class="btn btn-ghost btn-block" style="margin-top:8px" onclick="S.wizard.step=${w.sections.length-1};render()">Antworten noch einmal prüfen</button>
+    <button class="btn btn-primary btn-block" id="submit-btn" onclick="submitWizard()">Jetzt absenden</button>
+    <button class="btn btn-ghost btn-block" id="review-again-btn" style="margin-top:8px" onclick="S.wizard.step=${w.sections.length-1};render()">Antworten noch einmal prüfen</button>
   </div>`;
 }
 
 async function submitWizard(){
   const w = S.wizard;
-  const r = S.currentRound;
-  const type = w.kind === 'course' ? 'course' : ('teacher:'+slug(w.dozentName));
-  await saveResponse(r.id, type, w.dozentName, w.answers);
-  if (w.kind === 'course') markSubmitted('course', r.id);
-  else markSubmitted('teacher', r.id, slug(w.dozentName));
-  S.submittedThisSession = true;
-  S._lastKind = w.kind;
-  S._lastDozent = w.dozentName;
-  S.view = 'p_done';
-  render();
+  // Schutz gegen Doppel-/Mehrfachklick: ohne diese Sperre führte ein zweiter Tap
+  // (z. B. weil die Seite kurz nicht reagierte) zu doppelt gespeicherten Antworten.
+  if (w._submitting) return;
+  w._submitting = true;
+  const btn = document.getElementById('submit-btn');
+  const again = document.getElementById('review-again-btn');
+  if (btn){ btn.disabled = true; btn.textContent = 'Wird gesendet …'; }
+  if (again){ again.disabled = true; again.style.opacity = '.5'; }
+
+  try{
+    const r = S.currentRound;
+    const type = w.kind === 'course' ? 'course' : ('teacher:'+slug(w.dozentName));
+    await saveResponse(r.id, type, w.dozentName, w.answers);
+    if (w.kind === 'course') markSubmitted('course', r.id);
+    else markSubmitted('teacher', r.id, slug(w.dozentName));
+    S.submittedThisSession = true;
+    S._lastKind = w.kind;
+    S._lastDozent = w.dozentName;
+    S.view = 'p_done';
+    render();
+  }catch(e){
+    w._submitting = false;
+    if (btn){ btn.disabled = false; btn.textContent = 'Jetzt absenden'; }
+    if (again){ again.disabled = false; again.style.opacity = '1'; }
+    toast('Senden hat nicht geklappt. Bitte erneut versuchen.');
+  }
 }
 
 function renderDone(){
