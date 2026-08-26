@@ -940,12 +940,13 @@ async function removeDuplicates(){
   const extra = dup.groups.reduce((sum,g)=>sum+g.length-1,0);
   const total = dup.groups.reduce((sum,g)=>sum+g.length,0); // Näherung: Anzahl betroffener Zeilen in den erkannten Gruppen
   // Sicherheitsbremse: Duplikate durch Doppel-Tap betreffen normalerweise nur
-  // einzelne, kleine Cluster. Will die Erkennung auf einmal einen sehr großen
-  // Anteil aller Antworten löschen, ist das ein Warnsignal für einen Fehler in
-  // der Erkennung selbst — dann lieber stoppen und manuell prüfen lassen, statt
-  // möglicherweise einen Großteil echter Daten zu entfernen.
-  if (extra > 5 || extra > Math.ceil(dup.totalCount * 0.3)){
-    window.alert(`Sicherheitshinweis: Es wurden ${extra} Antworten als Duplikate erkannt — das ist ungewöhnlich viel für einzelne Doppel-Taps.\n\nUm versehentliches Löschen echter Antworten zu vermeiden, wird die automatische Entfernung hier gestoppt. Bitte prüfen Sie die Liste oben manuell (Kursnummer/Uhrzeiten) und wenden Sie sich im Zweifel an den Support, bevor Sie fortfahren.`);
+  // einzelne, kleine Cluster. Löscht die Erkennung auf einmal einen sehr großen
+  // UND absolut hohen Anteil aller Antworten, ist das ein Warnsignal für einen
+  // Fehler in der Erkennung selbst — dann lieber stoppen und manuell prüfen
+  // lassen. (Beide Bedingungen müssen zutreffen, damit ein paar echte
+  // Doppel-Taps bei kleinen bis mittleren Kursgrößen nicht unnötig blockiert werden.)
+  if (extra > 15 && extra > Math.ceil(dup.totalCount * 0.4)){
+    window.alert(`Sicherheitshinweis: Es wurden ${extra} Antworten als Duplikate erkannt — das ist ein ungewöhnlich großer Anteil aller Antworten.\n\nUm versehentliches Löschen echter Antworten zu vermeiden, wird die automatische Entfernung hier gestoppt. Bitte prüfen Sie die Liste oben manuell (Kursnummer/Uhrzeiten) und wenden Sie sich im Zweifel an den Support, bevor Sie fortfahren.`);
     return;
   }
   const ok = window.confirm(`${extra} doppelte Antwort(en) entfernen?\n\nJeweils die früheste Abgabe pro Gruppe bleibt erhalten. Dies kann nicht rückgängig gemacht werden.`);
