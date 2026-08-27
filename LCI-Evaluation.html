@@ -31,6 +31,11 @@
     --maxw:640px;
   }
   *{box-sizing:border-box;}
+  /* Sicherheitsnetz: Inline-SVG-Icons ohne eigene Größenangabe fallen im Browser
+     sonst auf 300×150px zurück (Standardgröße für SVG ohne width/height). Alle
+     spezifischeren Regeln unten (z.B. .tile-icon svg, .mark svg) überschreiben
+     das gezielt für größere Icons. */
+  svg{width:16px;height:16px;flex:none;vertical-align:middle;}
   html,body{margin:0;padding:0;}
   body{
     font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
@@ -182,7 +187,28 @@
   .round-item .ri-main{flex:1;min-width:0;}
   .round-item b{font-size:14.5px;display:block;}
   .round-item .ri-sub{font-size:12.5px;color:var(--gray);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .round-item .ri-counts{display:flex;gap:6px;flex:none;}
+  .round-item .ri-counts{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none;}
+
+  .cta-create{
+    display:flex;align-items:center;gap:22px;width:100%;
+    background:var(--blue);color:#fff;border:none;border-radius:var(--radius);
+    padding:34px 28px;cursor:pointer;text-align:left;transition:background .15s ease;
+    font-family:inherit;
+  }
+  .cta-create:hover{background:var(--blue-dark);}
+  .cta-create:active{transform:scale(.99);}
+  .cta-create .cta-icon{
+    width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.16);
+    display:flex;align-items:center;justify-content:center;flex:none;
+  }
+  .cta-create .cta-icon svg{width:30px;height:30px;color:#fff;}
+  .cta-create .cta-text{font-size:19px;font-weight:800;line-height:1.3;}
+  @media (max-width:420px){
+    .cta-create{padding:26px 20px;gap:16px;}
+    .cta-create .cta-icon{width:52px;height:52px;}
+    .cta-create .cta-icon svg{width:24px;height:24px;}
+    .cta-create .cta-text{font-size:17px;}
+  }
   .count-chip{font-size:11px;font-weight:700;background:var(--gray-light);color:var(--ink);padding:4px 8px;border-radius:7px;}
 
   .link-box{
@@ -508,6 +534,27 @@ async function loadRound(id){
   return rounds.find(r=>r.id===id) || null;
 }
 
+async function loadRoundCounts(rounds){
+  const [courseRows, teacherRows] = await Promise.all([
+    apiGetSheet('course_responses', S.adminToken),
+    apiGetSheet('teacher_responses', S.adminToken)
+  ]);
+  const counts = {};
+  rounds.forEach(r=>{ counts[r.id] = { total:0, last:null }; });
+  [...courseRows, ...teacherRows].forEach(row=>{
+    const c = counts[row.roundId];
+    if (!c) return;
+    c.total++;
+    const ts = Number(row.timestamp) || 0;
+    if (!c.last || ts > c.last) c.last = ts;
+  });
+  return counts;
+}
+async function refreshAdminList(){
+  S.rounds = await loadRounds();
+  S.roundCounts = await loadRoundCounts(S.rounds);
+}
+
 async function saveResponse(roundId, type, dozentName, answers){
   const sheet = type === 'course' ? 'course_responses' : 'teacher_responses';
   const record = Object.assign({
@@ -677,14 +724,20 @@ async function render(){
 /* ============================= ADMIN: LIST ============================= */
 
 function renderAdminList(){
+  const counts = S.roundCounts || {};
   const rows = S.rounds.map(r=>{
     const expired = isExpired(r);
+    const c = counts[r.id] || { total:0, last:null };
+    const respBadge = c.total > 0
+      ? `<span class="count-chip" style="background:var(--good-pale);color:var(--good)">${ICONS.check} ${c.total} Antwort${c.total===1?'':'en'}</span>`
+      : `<span class="count-chip">Noch keine Antworten</span>`;
     return `<div class="round-item" onclick="openRoundDetail('${r.id}')">
       <div class="ri-main">
         <b>${esc(r.kursnummer)}${r.kursname? ' · '+esc(r.kursname):''}</b>
-        <div class="ri-sub">${r.dozenten.map(esc).join(' & ') || 'keine Dozenten hinterlegt'} · erstellt ${fmtDate(r.createdAt)}</div>
+        <div class="ri-sub">${r.dozenten.map(esc).join(' & ') || 'keine Dozenten hinterlegt'} · erstellt ${fmtDate(r.createdAt)}${c.last? ' · letzte Antwort '+fmtDate(c.last) : ''}</div>
       </div>
       <div class="ri-counts">
+        ${respBadge}
         <span class="count-chip" style="${expired?'background:var(--bad-pale);color:var(--bad)':''}">${expired?'abgelaufen':fmtExpiry(r)}</span>
       </div>
     </div>`;
@@ -695,7 +748,10 @@ function renderAdminList(){
     <h1>Evaluationen</h1>
     <p>Erstellen Sie für jeden Kurs eine eigene Evaluationsrunde und versenden Sie den passenden Link an Ihre Teilnehmer.</p>
 
-    <button class="btn btn-primary btn-block" onclick="goCreate()">${ICONS.plus} Neue Evaluation anlegen</button>
+    <button class="cta-create" onclick="goCreate()">
+      <div class="cta-icon">${ICONS.plus}</div>
+      <div class="cta-text">Neue Evaluation<br>anlegen</div>
+    </button>
 
     <div class="divider"></div>
 
@@ -1264,7 +1320,11 @@ function previewParticipant(roundId){
   render();
 }
 
-function goAdminList(){ S.view='admin_list'; S._justCreated=false; render(); }
+function goAdminList(){
+  S._justCreated=false;
+  S.view='loading'; render();
+  refreshAdminList().then(()=>{ S.view='admin_list'; render(); });
+}
 function goCreate(){ S.view='admin_create'; render(); setTimeout(()=>document.getElementById('f_kursnummer')?.focus(),50); }
 
 /* ============================= ADMIN: LOGIN ============================= */
@@ -1293,7 +1353,7 @@ async function adminLogin(){
   try{ localStorage.setItem(ADMIN_TOKEN_KEY, pw); }catch(e){}
   S._loginError = null;
   S.view = 'loading'; render();
-  S.rounds = await loadRounds();
+  await refreshAdminList();
   S.view = 'admin_list';
   render();
 }
@@ -1685,6 +1745,7 @@ async function init(){
       return;
     }
     S.rounds = await loadRounds();
+    S.roundCounts = await loadRoundCounts(S.rounds);
     S.view = 'admin_list';
     render();
   }
