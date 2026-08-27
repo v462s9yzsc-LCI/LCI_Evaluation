@@ -1091,7 +1091,8 @@ function renderDetailContent(){
       <div class="section-sub">&nbsp;</div>`;
 
     if (sec.scaleType){
-      out += `<div class="chart-box"><canvas id="chart-${sec.id}" height="60"></canvas></div>`;
+      const chartH = Math.max(90, sec.items.length*34);
+      out += `<div class="chart-box" style="height:${chartH}px"><canvas id="chart-${sec.id}"></canvas></div>`;
     } else {
       sec.items.forEach(item=>{
         const itype = item.type || 'choice';
@@ -1183,7 +1184,15 @@ async function renderAdminCharts(){
   const info = currentTabInfo();
   if (!info.data.length) return;
   if (typeof Chart === 'undefined'){
-    try{ await loadScript(CHART_JS_URL); }catch(e){ console.error(e); return; }
+    try{ await loadScript(CHART_JS_URL); }
+    catch(e){
+      console.error(e);
+      document.querySelectorAll('.chart-box').forEach(box=>{
+        box.style.height = 'auto';
+        box.innerHTML = '<p style="margin:0;color:var(--bad);font-size:12.5px">Diagramm konnte nicht geladen werden (Netzwerkproblem). Bitte Seite neu laden.</p>';
+      });
+      return;
+    }
     // Falls der Nutzer inzwischen weitergeklickt hat, nicht mehr auf einer alten Ansicht zeichnen
     if (S.view !== 'admin_detail') return;
   }
@@ -1204,7 +1213,6 @@ async function renderAdminCharts(){
     });
     const canvas = document.getElementById(`chart-${sec.id}`);
     if (!canvas) return;
-    canvas.height = Math.max(60, labels.length*34);
     const ctx = canvas.getContext('2d');
     const chart = new Chart(ctx, {
       type: 'bar',
